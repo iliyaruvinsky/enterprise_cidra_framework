@@ -1,5 +1,5 @@
 # CIDRA Framework
-## Chunker + Interpreter + Documenter + Recommender + Assistant
+## Chunker + Interpreter + Documenter + Recommender + Applicator
 
 **Framework גנרי לתיעוד ומודרניזציה של מערכות Legacy באמצעות AI.**
 
@@ -9,7 +9,7 @@ CIDRA מאחדת חמישה מנועים משלימים:
 - `the_interpreter` – *עתידי* (שמורה למנוע ניתוח הקשר)
 - `the_documenter` – תיעוד מדויק 100%
 - `the_recommender` – המלצות מודרניזציה מבוססות ROI
-- `the_assistant` – פיתוח מואץ עם Agentic AI
+- `the_applicator` – יישום אוטומטי של שינויים והמלצות
 
 ה-framework נבנה מתוך ניסיון בשטח ומותאם לכל ארגון בישראל שמבצע תיעוד ומודרניזציה בקנה מידה גדול.
 
@@ -81,7 +81,7 @@ enterprise_cidra_framework/
 | `the_documenter` | תיעוד מדויק עם Anti-Hallucination Framework | Production Ready |
 | `the_recommender` | המלצות מודרניזציה + ROI + Risk Assessment | Production Ready |
 | `the_interpreter` | (Reservado) עתידי – הבנת הקוד בזמן אמת | Roadmap |
-| `the_assistant` | (Reservado) Agentic Development Assistant | Roadmap |
+| `the_applicator` | (Reservado) יישום אוטומטי של שינויים והמלצות | Roadmap |
 
 כל Agent מגיע עם:
 - מפרט מלא (`agent_specification.md`)
