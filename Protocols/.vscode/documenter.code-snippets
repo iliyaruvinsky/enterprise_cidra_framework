@@ -1,0 +1,33 @@
+{
+  "CIDRA Code Citation": {
+    "prefix": "cidra-cite",
+    "body": [
+      "```${1:language}",
+      "${2:code_here}",
+      "```",
+      "",
+      "**Source**: `Source Code/${3:path/to/file}` lines ${4:START}-${5:END}",
+      "",
+      "$0"
+    ],
+    "description": "CIDRA code citation with line numbers"
+  },
+  
+  "CIDRA Limitations Section": {
+    "prefix": "cidra-limits",
+    "body": [
+      "## Documentation Limitations",
+      "",
+      "### What Cannot Be Known:",
+      "- ${1:External dependencies}",
+      "- ${2:Database contents}",
+      "",
+      "### What Is Known:",
+      "- ${3:Code structure}",
+      "- ${4:Methods defined}",
+      "",
+      "$0"
+    ],
+    "description": "CIDRA limitations section"
+  }
+}

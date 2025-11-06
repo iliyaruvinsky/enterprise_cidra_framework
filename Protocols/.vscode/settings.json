@@ -1,0 +1,54 @@
+{
+  "github.copilot.enable": true,
+  "github.copilot.chat.enable": true,
+  "github.copilot.editor.enableAutoCompletions": true,
+  
+  "files.associations": {
+    "*.cursorrules": "markdown",
+    ".cidra-config.json": "jsonc",
+    "*SPECIFICATION*.md": "markdown",
+    "*VALIDATION*.md": "markdown"
+  },
+  
+  "markdown.preview.breaks": true,
+  "markdown.preview.fontSize": 14,
+  "markdown.preview.lineHeight": 1.4,
+  
+  "editor.wordWrap": "on",
+  "editor.rulers": [80, 120],
+  "editor.minimap.enabled": false,
+  "editor.fontSize": 14,
+  "editor.lineHeight": 1.5,
+  
+  "files.encoding": "utf8",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  
+  "explorer.sortOrder": "type",
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "*.md": "${capture}.html, ${capture}.pdf",
+    "README.md": "01_*.md, 02_*.md, 03_*.md, 04_*.md, 05_*.md, VALIDATION_*.md"
+  },
+  
+  "search.exclude": {
+    "**/*.rar": true,
+    "**/*.zip": true,
+    "**/*.7z": true,
+    "**/node_modules": true,
+    "**/.git": true
+  },
+  
+  "terminal.integrated.fontSize": 12,
+  
+  "workbench.colorCustomizations": {
+    "editorRuler.foreground": "#4A90E2",
+    "tab.activeBorder": "#4A90E2"
+  },
+  
+  "cidra": {
+    "framework": "CIDRA",
+    "documentationStandard": "7 files per component",
+    "accuracyRequired": "100%"
+  }
+}

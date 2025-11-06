@@ -1,0 +1,49 @@
+{
+  "cidra_framework_path": "../enterprise_cidra_framework",
+  "cidra_framework_url": "https://github.com/iliyaruvinsky/enterprise_cidra_framework.git",
+  
+  "project_name": "MY_PROJECT_NAME",
+  "technology": "SAP",
+  "plugin": "https://github.com/iliyaruvinsky/enterprise_cidra_framework/blob/main/Plugins/sap_plugin.yaml",
+  "code_location": "./Source Code",
+  "documentation_language": "en",
+  "created_at": "2025-11-06T00:00:00Z",
+  "updated_at": "2025-11-06T00:00:00Z",
+  
+  "agents": {
+    "the_chunker": {
+      "enabled": true,
+      "strategy": "adaptive",
+      "chunk_size": "2K-4K tokens",
+      "optimization": "llm-friendly"
+    },
+    "the_documenter": {
+      "enabled": true,
+      "anti_hallucination": true,
+      "file_count": 7,
+      "citation_required": true,
+      "exact_counting": true,
+      "shared_component_check": true
+    },
+    "the_recommender": {
+      "enabled": true,
+      "roi_analysis": true,
+      "risk_assessment": true,
+      "multi_criteria": true
+    }
+  },
+  
+  "validation": {
+    "strict_mode": true,
+    "min_quality_score": 100,
+    "required_sections": "all",
+    "code_verification": true
+  },
+  
+  "output": {
+    "directory": "./Documentation",
+    "format": "markdown",
+    "include_validation_reports": true
+  }
+}
+

@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "📊 Scan Source Code Files",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "Write-Host 'Scanning Source Code directory...' -ForegroundColor Blue; (Get-ChildItem 'Source Code' -Recurse -File | Measure-Object).Count"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Find Component Files",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "$componentName = Read-Host 'Enter component name'; Write-Host \"Searching for $componentName files...\" -ForegroundColor Green; Get-ChildItem 'Source Code' -Recurse -File | Select-String -Pattern $componentName | Select-Object -ExpandProperty Path | Sort-Object -Unique"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "✅ Validate Component Documentation",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "$component = Read-Host 'Enter component folder name'; $files = @('01_SPECIFICATION.md', '02_UI_MOCKUP.md', '03_TECHNICAL_ANALYSIS.md', '04_BUSINESS_LOGIC.md', '05_CODE_ARTIFACTS.md', 'README.md', 'VALIDATION_REPORT.md'); $missing = @(); foreach ($file in $files) { if (-not (Test-Path \"$component\\$file\")) { $missing += $file } }; if ($missing.Count -eq 0) { Write-Host '✅ All 7 files present!' -ForegroundColor Green } else { Write-Host \"❌ Missing: $($missing -join ', ')\" -ForegroundColor Red }"
+      ],
+      "group": "test"
+    }
+  ]
+}

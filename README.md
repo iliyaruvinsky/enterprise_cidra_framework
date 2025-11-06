@@ -15,7 +15,13 @@ CIDRA מאחדת חמישה מנועים משלימים:
 
 ---
 
-## 🚀 התחלה מהירה
+## ⚡ Quick Start (5 Minutes)
+
+**New to CIDRA?** Start here: **[QUICK_START.md](QUICK_START.md)** 🚀
+
+---
+
+## 🚀 Full Setup
 
 ```bash
 # Clone הפרויקט (Read-Only למפתחים)

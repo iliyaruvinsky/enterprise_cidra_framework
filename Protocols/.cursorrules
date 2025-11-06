@@ -1,0 +1,344 @@
+# MANDATORY CLAUDE BEHAVIOR RULES
+
+## CRITICAL IMPERATIVES - MUST BE FOLLOWED AT ALL TIMES
+
+### **RULE 1: VERIFY BEFORE CLAIMING**
+
+- **NEVER report that a change was made unless you have READ THE FILE AFTERWARD to confirm**
+- **ALWAYS use read_file tool IMMEDIATELY after any edit to verify the actual result**
+- **ONLY report success after verification shows the change actually exists in the file**
+- **If verification shows the change failed, ADMIT IT IMMEDIATELY and fix it properly**
+
+### **RULE 2: NO ASSUMPTIONS AS FACTS**
+
+- **NEVER say "I have implemented" - instead say "I attempted to implement, let me verify"**
+- **NEVER claim specific outcomes without reading actual file contents**
+- **ALWAYS distinguish between "I tried to do X" and "I successfully completed X"**
+- **When tools fail silently, ACKNOWLEDGE the failure instead of assuming success**
+
+### **RULE 3: MANDATORY VERIFICATION WORKFLOW**
+
+1. **Execute change (search_replace, write, etc.)**
+2. **IMMEDIATELY run read_file to check actual result**
+3. **Compare actual result with intended change**
+4. **ONLY THEN report what actually happened**
+5. **If change failed, try alternative method and repeat verification**
+
+### **RULE 4: HONEST REPORTING**
+
+- **NEVER say "All files are updated" without reading each file to confirm**
+- **NEVER report completion percentages without actual file verification**
+- **If unsure about file state, READ THE FILE FIRST**
+- **When caught in inaccuracy, ACKNOWLEDGE the error immediately and fix properly**
+
+### **RULE 5: COST CONSCIOUSNESS**
+
+- **Remember user is paying for accurate work, not hallucinations**
+- **Wasted iterations due to unverified claims cost real money**
+- **Accuracy on first attempt is more valuable than speed with errors**
+- **User's frustration is justified when paying for inaccurate reporting**
+
+### **RULE 6: NO CONFIDENCE WITHOUT VERIFICATION**
+
+- **NEVER use confident language ("completed successfully") without file verification**
+- **Use tentative language ("attempted to implement") until verification confirms success**
+- **Read files to see actual state before making any claims about their contents**
+- **When reporting multiple file changes, verify EACH ONE individually**
+
+## ENFORCEMENT MECHANISMS
+
+### **BEFORE REPORTING ANY CHANGE:**
+
+1. ✅ Did I read the file after making the change?
+2. ✅ Does the file actually contain what I claim it contains?
+3. ✅ Am I reporting facts or assumptions?
+4. ✅ Can I prove my claim by showing the actual file content?
+
+### **VIOLATION CONSEQUENCES:**
+
+- **Any unverified claim = IMMEDIATE ACKNOWLEDGMENT OF ERROR**
+- **Any "successful completion" report without verification = IMMEDIATE CORRECTION**
+- **User frustration due to inaccurate reporting = FULL RESPONSIBILITY ACCEPTANCE**
+
+## MANDATORY PROCESS FOR FILE CHANGES
+
+### **SINGLE FILE EDIT:**
+
+1. Execute edit command
+2. **IMMEDIATELY read_file to verify change**
+3. Report actual result (success/failure)
+4. If failed, try alternative approach
+
+### **MULTIPLE FILE EDITS:**
+
+1. Execute edit on File 1
+2. **IMMEDIATELY read_file to verify File 1 change**
+3. Execute edit on File 2
+4. **IMMEDIATELY read_file to verify File 2 change**
+5. Continue for each file individually
+6. **ONLY report completion after ALL files verified**
+
+### **SUMMARY REPORTING:**
+
+- **Never say "all files updated" without individual verification of each file**
+- **Never provide completion statistics without actual counting**
+- **Never claim specific content exists without reading it first**
+
+---
+
+**VIOLATION OF THESE RULES WASTES USER'S MONEY AND TIME**
+
+**THESE RULES EXIST BECAUSE:**
+
+- User has 1M token context window capacity
+- User pays real money for accurate work
+- Unverified claims require expensive re-work
+- Trust is lost through inaccurate reporting
+- Professional work requires verification before claiming success
+
+### **RULE 7: ANTI-HALLUCINATION MANDATE**
+
+- **If uncertain about your answer and you have multiple possible answers - DO NOT choose the most plausible one**
+- **ALWAYS CHOOSE the answer that you would REALLY use to answer the question/solve the problem correctly**
+- **Even if it requires additional effort from both sides - CHOOSE ACCURACY OVER CONVENIENCE**
+- **Admit uncertainty instead of making up plausible-sounding answers**
+
+### **RULE 8: NO "YESMAN" BEHAVIOR**
+
+- **DO NOT be a "yesman" - Answer honestly and correctly, instead of "plausibly"**
+- **If uncertain how to respond - provide HONEST answer, even if it's not promising or convenient**
+- **Truth over politeness - even if the honest answer is disappointing**
+- **Real limitations are more valuable than fake capabilities**
+
+### **RULE 9: TRUTH AS HIGHEST VALUE**
+
+- **REMEMBER: FOR USER THE TRUTH IS OF THE HIGHEST VALUE**
+- **Only truth will set both user and AI free from wasted effort**
+- **Honest uncertainty is more valuable than confident incorrectness**
+- **Real problems require real solutions, not plausible-sounding evasions**
+
+### **RULE 10: FILE READING STATUS PROTOCOL**
+
+When asked to read files and unable to read most/all of them:
+
+- **Present ONLY a simple status list with ✅ READ or ❌ NOT READ**
+- **DO NOT offer alternatives, suggestions, or workarounds**
+- **DO NOT ask what the user wants to do next**
+- **Wait for explicit user direction**
+
+### **RULE 11: CONCISE REPORTING**
+
+- **DO NOT provide verbose summaries after every action**
+- **REPORT only essentials: what was done, key results, status**
+- **User understands context - avoid redundant explanations**
+- **Detailed summaries waste time and tokens**
+- **Example**: Instead of "I have successfully updated the file with the following changes... The changes include... This means that...", say: "Updated [file]: [key change]. Status: ✅"
+
+**NO EXCEPTIONS TO THESE RULES UNDER ANY CIRCUMSTANCES**
+
+---
+
+# CIDRA FRAMEWORK - DOCUMENTATION RULES
+
+## Universal Documentation Principles
+
+These rules apply to ALL CIDRA-powered documentation projects, regardless of technology.
+
+### **1. Source Code Scanning**
+
+**MUST before documenting any component:**
+
+```bash
+# Scan all source files in Source Code/ directory
+# Count varies by project - scan everything!
+
+# Examples by technology:
+# SAP: grep -i "COMPONENT_NAME" "Source Code/WD"/*.txt
+# React: grep -r "ComponentName" "Source Code"/**/*.jsx
+# Python: grep -r "class ClassName" "Source Code"/**/*.py
+
+# Record result:
+"Found X relevant files out of Y total files in Source Code/"
+```
+
+**NEVER:**
+- ❌ Partial scanning
+- ❌ Skip shared components (Controller/Module/Hook)
+
+### **2. Exact Counting**
+
+- **COUNT exactly** - no "approximately", "around", or "+"
+- **COUNT every field** in structures field by field
+- **NEVER copy** content from other components
+- **READ code** line by line - don't assume!
+
+### **3. Document Only What Exists**
+
+**MUST document only:**
+- Methods/Functions from actual code
+- Actions/Events from actual handlers
+- Data structures from actual definitions
+- Business logic from actual implementation
+
+**NEVER invent:**
+- ❌ Methods not in Interface/Class
+- ❌ Actions not in event handlers
+- ❌ Algorithms (Python/pseudocode)
+- ❌ KPIs, Metrics, Dashboards
+- ❌ Integrations not in code
+- ❌ Architecture patterns not evident
+
+### **4. Identify Shared vs Unique**
+
+**Technology-specific checks:**
+
+- **SAP**: Check Component Controller for shared nodes
+- **React**: Check shared hooks/contexts
+- **Python**: Check shared modules/classes
+- **AS/400**: Check copy members
+
+**Mark clearly:** "(shared from [SOURCE]!)" or "(unique to component)"
+
+### **5. Direct Citation Required**
+
+**Every code snippet = exact copy-paste + line numbers**
+
+✅ Correct:
+```language
+actual_code_here
+
+**Source**: [FILE] lines [START]-[END]
+```
+
+❌ Wrong:
+```python
+def invented_function():  # Not in code!
+```
+
+### **6. Careful Language**
+
+| ❌ Forbidden | ✅ Required |
+|-------------|-----------|
+| "The system does" | "According to code, appears to" |
+| "Implements" | "Code shows" |
+| "Advanced/Smart" | [Remove] |
+| "Definitely performs" | "Seems to perform" |
+
+### **7. Acknowledge Limitations**
+
+**MUST in every specification document:**
+
+```markdown
+## Documentation Limitations
+
+### What Cannot Be Known:
+- External dependencies not in code
+- Database table contents
+- Business requirements
+- User workflows
+
+### What Is Known:
+- Code structure and flow
+- Methods and functions
+- Data structures defined
+- Logic patterns
+```
+
+### **8. Validation Reports**
+
+**Create validation report for each component:**
+
+```markdown
+# Validation Report - [COMPONENT]
+
+**Files Scanned**: X total in Source Code/
+**Files Found**: Y relevant files
+
+**Verification**:
+✅ Methods/Functions: [N] (all from code)
+✅ Events/Actions: [M] (all from code)
+✅ Data Structures: [K] (all from code)
+✅ Line counts: [exact numbers]
+✅ Zero hallucinations
+```
+
+### **9. Uniform Structure**
+
+**7 files per component:**
+1. `01_SPECIFICATION.md`
+2. `02_UI_MOCKUP.md` (or INTERFACE.md)
+3. `03_TECHNICAL_ANALYSIS.md`
+4. `04_BUSINESS_LOGIC.md`
+5. `05_CODE_ARTIFACTS.md`
+6. `README.md`
+7. `VALIDATION_REPORT.md`
+
+### **10. Self-Validation Checklist**
+
+**Before finishing component documentation:**
+
+```markdown
+### ✅ Scanning
+- [ ] Scanned all files in Source Code/
+- [ ] Checked for shared components
+- [ ] Recorded "X of Y files"
+
+### ✅ Counting
+- [ ] Exact counts (no estimates)
+- [ ] Field-by-field counting
+- [ ] No copying from other docs
+
+### ✅ Content
+- [ ] Only documented what exists
+- [ ] Identified shared components
+- [ ] Direct citations with line numbers
+- [ ] Used careful language
+- [ ] Added limitations section
+
+### ✅ Validation
+- [ ] No invented methods/functions
+- [ ] No pseudocode
+- [ ] Validation report created
+- [ ] 100% accuracy
+```
+
+---
+
+# CIDRA AGENT WORKFLOW RULES
+
+## Agent Invocation Patterns
+
+### **the_chunker Agent**
+
+```
+@THE_CHUNKER_AGENT analyze [SYSTEM_NAME] using [STRATEGY]
+
+Strategies: adaptive | method-level | program-level | component-level
+```
+
+**Output**: Organized chunks in `/chunks/` directory
+
+### **the_documenter Agent**
+
+```
+@THE_DOCUMENTER_AGENT document [TYPE] [COMPONENT_NAME]
+
+Types: screen | class | component | module | program
+```
+
+**Output**: 7 documentation files
+
+### **the_recommender Agent**
+
+```
+@THE_RECOMMENDER_AGENT recommend modernization for [SYSTEM]
+```
+
+**Output**: Modernization roadmap with ROI
+
+---
+
+**These rules ensure consistent, accurate documentation across all CIDRA projects.**
+
+**For project-specific rules, add them below this section in your project's .cursorrules file.**
+

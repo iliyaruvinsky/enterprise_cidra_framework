@@ -1,11 +1,27 @@
-# Snapshots Directory
+# Snapshots Directory (Optional)
 
-This directory contains snapshots of your code for AI interactions. Each snapshot is a markdown file that includes relevant code context and project structure information.
+**Purpose**: IDE snapshot configuration  
+**Used by**: Cursor, Windsurf
 
-## What's included in snapshots?
-- Selected code files and their contents
-- Project structure (if enabled)
-- Your prompt/question for the AI
+---
 
-## Configuration
-You can customize snapshot behavior in `config.json`.
+## What is This?
+
+Configuration for which files IDEs include in AI code snapshots.
+
+**Optional** - only needed if your IDE supports this.
+
+---
+
+## Setup
+
+```bash
+# If your IDE uses snapshots
+cp -r Protocols/.snapshots .
+```
+
+Otherwise, ignore this directory.
+
+---
+
+**Optional IDE feature - not required for CIDRA.**
