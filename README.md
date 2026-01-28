@@ -52,13 +52,26 @@ Wizards\setup-wizard.ps1
 enterprise_cidra_framework/
 ├── Agents/
 │   ├── THE_CHUNKER_AGENT/
+│   │   ├── agent_specification.md
+│   │   └── skills.yaml              ← NEW
 │   ├── THE_DOCUMENTER_AGENT/
-│   └── THE_RECOMMENDER_AGENT/
+│   │   ├── agent_specification.md
+│   │   └── skills.yaml              ← NEW
+│   ├── THE_RECOMMENDER_AGENT/
+│   │   ├── agent_specification.md
+│   │   └── skills.yaml              ← NEW
+│   ├── shared/                       ← NEW
+│   │   ├── anti_hallucination_engine.yaml
+│   │   ├── validation_framework.yaml
+│   │   └── templates/
+│   └── registry.yaml                 ← NEW
 ├── Documentation/
 │   ├── ARCHITECTURE.md
 │   ├── INSTALLATION.md
 │   ├── USER_GUIDE.md
-│   └── PLUGINS_OVERVIEW.md
+│   ├── PLUGINS_OVERVIEW.md
+│   ├── ACTIVATION_COMMANDS.md       ← NEW
+│   └── SKILLS_SPECIFICATION.md      ← NEW
 ├── Plugins/
 │   ├── sap_plugin.yaml
 │   ├── as400_plugin.yaml
@@ -67,11 +80,17 @@ enterprise_cidra_framework/
 ├── Protocols/   (תבניות להפעלה ב-IDE שונים)
 │   ├── .vscode/
 │   ├── .claude/
+│   ├── .cursor/                     ← NEW
 │   └── .windsurf/
+├── Scripts/                          ← NEW
+│   ├── install.ps1
+│   ├── install.sh
+│   └── add-agent.ps1
 ├── Wizards/
 │   ├── setup-wizard.sh
 │   ├── setup-wizard.ps1
 │   └── wizard-config-schema.json
+├── cidra.manifest.yaml               ← NEW
 ├── README.md
 ├── LICENSE (ברירת מחדל: MIT)
 └── .gitignore
@@ -91,9 +110,70 @@ enterprise_cidra_framework/
 
 כל Agent מגיע עם:
 - מפרט מלא (`agent_specification.md`)
+- הגדרת יכולות (`skills.yaml`) ← **NEW**
 - מסמכי אינטגרציה לכלי פיתוח
 - קובצי YAML לניהול תצורה
 - מדריכי הפעלה ל-IDE (Cursor, Claude Code, VS Code)
+
+---
+
+## 🎯 Skills System (NEW)
+
+כל Agent כולל `skills.yaml` שמגדיר:
+
+### פקודות הפעלה (Slash Commands)
+
+| Agent | פקודה | תיאור |
+|-------|-------|-------|
+| **Chunker** | `/chunk [path]` | חיתוך קוד לחלקים |
+| **Chunker** | `/chunk:analyze [path]` | תצוגה מקדימה |
+| **Chunker** | `/chunk:status` | סטטוס פעולה |
+| **Documenter** | `/document:setup` | הגדרת פרויקט (פעם אחת) |
+| **Documenter** | `/document [component]` | תיעוד רכיב |
+| **Documenter** | `/document:validate` | בדיקת איכות 100 נקודות |
+| **Documenter** | `/document:fix` | תיקון אוטומטי |
+| **Recommender** | `/recommend [component]` | המלצות מודרניזציה |
+| **Recommender** | `/recommend:compare` | השוואת טכנולוגיות |
+| **Recommender** | `/recommend:risk` | הערכת סיכונים |
+
+### סוגי Skills
+
+- **user_invoked** - פקודות שהמשתמש מפעיל
+- **dialog** - אינטראקציה עם המשתמש
+- **internal** - יכולות אוטומטיות
+- **output** - הגדרת פלטים
+- **quality** - בדיקות איכות
+
+מסמך מלא: `Documentation/SKILLS_SPECIFICATION.md`
+
+---
+
+## 🔧 התקנה מהירה (One-Line Install)
+
+### Windows (PowerShell)
+```powershell
+# Clone והתקנה
+git clone https://github.com/iliyaruvinsky/enterprise_cidra_framework.git
+cd enterprise_cidra_framework
+.\Scripts\install.ps1 -ProjectPath "C:\your\project"
+```
+
+### Linux/Mac
+```bash
+# Clone והתקנה
+git clone https://github.com/iliyaruvinsky/enterprise_cidra_framework.git
+cd enterprise_cidra_framework
+./Scripts/install.sh -p /path/to/your/project
+```
+
+### אפשרויות התקנה
+
+| אפשרות | תיאור |
+|--------|-------|
+| `-ProjectPath` / `-p` | נתיב לפרויקט היעד |
+| `-Force` / `-f` | דריסת התקנה קיימת |
+| `-Uninstall` / `-u` | הסרת CIDRA מפרויקט |
+| `-Help` / `-h` | עזרה |
 
 ---
 

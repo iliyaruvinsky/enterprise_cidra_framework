@@ -765,161 +765,45 @@ CREATE (c)-[:TAGGED_WITH]->(t:Tag {name: 'validation'})
 
 ## 🔧 IDE Integration
 
-### VS Code Tasks
+The Chunker is a **prompt-driven agent** designed for activation via AI-assisted IDEs.
 
-**File**: `.vscode/tasks.json`
+### Cursor Integration (Recommended)
 
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "🔪 Chunker: Analyze Codebase",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_CHUNKER_AGENT/scripts/analyze.py",
-        "--path", "${workspaceFolder}",
-        "--output", "${workspaceFolder}/CHUNKS/analysis.json"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "🔪 Chunker: Generate Chunks",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_CHUNKER_AGENT/scripts/chunk.py",
-        "--input", "${workspaceFolder}/CHUNKS/analysis.json",
-        "--output", "${workspaceFolder}/CHUNKS/repository.json",
-        "--strategy", "adaptive"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": [],
-      "dependsOn": ["🔪 Chunker: Analyze Codebase"]
-    },
-    {
-      "label": "🔪 Chunker: Build Relationships",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_CHUNKER_AGENT/scripts/relationships.py",
-        "--chunks", "${workspaceFolder}/CHUNKS/repository.json",
-        "--output", "${workspaceFolder}/CHUNKS/graph.json"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": [],
-      "dependsOn": ["🔪 Chunker: Generate Chunks"]
-    },
-    {
-      "label": "🔪 Chunker: Export to Vector DB",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_CHUNKER_AGENT/scripts/export_vectordb.py",
-        "--chunks", "${workspaceFolder}/CHUNKS/repository.json",
-        "--format", "pinecone",
-        "--output", "${workspaceFolder}/CHUNKS/vectors.jsonl"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "🔪 Chunker: Complete Pipeline",
-      "dependsOn": [
-        "🔪 Chunker: Analyze Codebase",
-        "🔪 Chunker: Generate Chunks",
-        "🔪 Chunker: Build Relationships",
-        "🔪 Chunker: Export to Vector DB"
-      ],
-      "dependsOrder": "sequence",
-      "problemMatcher": []
-    }
-  ]
-}
+**Full guide**: [cursor_integration.md](cursor_integration.md)
+
+**Quick Start**:
 ```
-
----
-
-### Cursor Integration
-
-**File**: `THE_CHUNKER_AGENT/cursor_integration.md`
-
-```markdown
-# Using The Chunker in Cursor
-
-## Quick Start
-
 @THE_CHUNKER_AGENT/agent_specification.md
+@THE_CHUNKER_AGENT/chunking_strategies.yaml
 
 Analyze my codebase and create optimized chunks for RAG:
-- Directory: WD/ and ABAP/
+- Directory: [YOUR_CODE_PATH]
 - Languages: ABAP, WebDynpro
-- Strategy: adaptive (mix of file-level and function-level)
+- Strategy: adaptive
 - Output: JSON repository + markdown docs
 
-## Commands
-
-### Analyze
-"Analyze the ABAP directory and identify chunking opportunities"
-
-### Chunk
-"Generate optimized chunks from WD/ files using function-level strategy"
-
-### Export
-"Export chunks to Pinecone-compatible format"
-
-### Query
-"Find all chunks related to patient validation"
+Follow the 5-phase workflow.
 ```
-
----
 
 ### Claude Code Integration
 
-**File**: `THE_CHUNKER_AGENT/claude_code_integration.md`
-
-```markdown
-# Using The Chunker in Claude Code
-
-## Installation
-
-1. Create CHUNKS/ directory:
-   mkdir CHUNKS
-
-2. Add chunker agent files to context:
-   - THE_CHUNKER_AGENT/agent_specification.md
-   - THE_CHUNKER_AGENT/chunking_strategies.yaml
-
-## Usage
-
-### Step 1: Analyze
-Run analysis to understand codebase:
-python THE_CHUNKER_AGENT/scripts/analyze.py --path .
-
-### Step 2: Chunk
-Generate chunks:
-python THE_CHUNKER_AGENT/scripts/chunk.py
-
-### Step 3: Query
-Ask Claude Code with chunk context:
-@CHUNKS/repository.json
-
-"Explain how patient validation works, citing specific code chunks"
 ```
+Read THE_CHUNKER_AGENT/agent_specification.md and chunking_strategies.yaml
+
+Chunk my codebase following the 5-phase workflow:
+1. Analyze - Scan [path] and identify structure
+2. Chunk - Break into semantic pieces (2K-4K tokens)
+3. Metadata - Generate summaries and tags
+4. Relationships - Map dependencies
+5. Export - Output to CHUNKS/
+```
+
+### VS Code Integration
+
+Use CIDRA snippets for quick activation. See `Protocols/.vscode/cidra.code-snippets`.
+
+> **Note**: Python automation scripts are planned for future implementation.
+> Current execution model is prompt-driven via Cursor, Claude Code, or VS Code with AI extension.
 
 ---
 

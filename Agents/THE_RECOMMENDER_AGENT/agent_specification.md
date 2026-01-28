@@ -1492,115 +1492,56 @@ THE_RECOMMENDER_AGENT/
 
 ## 🔌 IDE Integration
 
-### Integration 1: Cursor
+The Recommender is a **prompt-driven agent** designed for activation via AI-assisted IDEs.
+
+### Cursor Integration (Recommended)
 
 **Activation**:
 ```
 @THE_RECOMMENDER_AGENT/agent_specification.md
 @THE_RECOMMENDER_AGENT/recommendation_strategies.yaml
-@WD/SCREENS/03_V_DETAIL_SCREEN/README.md
+@Screens/[COMPONENT]/README.md
 
-Analyze V_DETAIL screen and recommend modernization approach.
+Analyze [COMPONENT] and recommend modernization approach.
 Consider:
-- Team knows Java but not React
-- 12-month timeline
-- Budget: $300K
-- Must maintain 99% uptime
+- Team skills: [describe current vs target skills]
+- Timeline: [months available]
+- Budget: [$amount]
+- Constraints: [uptime, compliance, etc.]
 
-Produce full recommendation report.
+Produce full recommendation report following the 5-phase process.
 ```
 
 **Output**: Complete recommendation in markdown + JSON
 
-### Integration 2: VS Code Tasks
+### Claude Code Integration
 
-**tasks.json**:
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "🎯 Recommender: Analyze Component",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_RECOMMENDER_AGENT/scripts/analyze.py",
-        "--component", "${input:componentPath}",
-        "--context", "${workspaceFolder}/project_context.yaml"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "🎯 Recommender: Generate Full Report",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_RECOMMENDER_AGENT/scripts/recommend.py",
-        "--component", "${input:componentPath}",
-        "--output", "${workspaceFolder}/THE_RECOMMENDER_AGENT/RECOMMENDATIONS/${input:componentName}/"
-      ]
-    },
-    {
-      "label": "🎯 Recommender: Compare Technologies",
-      "type": "shell",
-      "command": "python",
-      "args": [
-        "${workspaceFolder}/THE_RECOMMENDER_AGENT/scripts/tech_compare.py",
-        "--legacy", "${input:legacyTech}",
-        "--alternatives", "3"
-      ]
-    }
-  ],
-  "inputs": [
-    {
-      "id": "componentPath",
-      "type": "promptString",
-      "description": "Path to component documentation (e.g., WD/SCREENS/03_V_DETAIL_SCREEN)"
-    },
-    {
-      "id": "componentName",
-      "type": "promptString",
-      "description": "Component name (e.g., V_DETAIL_SCREEN)"
-    },
-    {
-      "id": "legacyTech",
-      "type": "pickString",
-      "options": ["ABAP", "WebDynpro", "RPG", "COBOL", "AS400"],
-      "description": "Legacy technology to analyze"
-    }
-  ]
-}
+```
+Read THE_RECOMMENDER_AGENT/agent_specification.md and recommendation_strategies.yaml
+
+Analyze component documentation at [path] and produce:
+1. Technology alternatives with confidence scores
+2. Architecture pattern recommendations
+3. Migration strategy (Rewrite/Refactor/Replatform/Retire)
+4. Risk assessment with mitigations
+5. ROI analysis
+
+Output to RECOMMENDATIONS/[COMPONENT]/
 ```
 
-### Integration 3: Claude Code
+### VS Code Integration
 
-**Scripts**:
-```bash
-# Analyze component
-python THE_RECOMMENDER_AGENT/scripts/analyze.py \
-  --component WD/SCREENS/03_V_DETAIL_SCREEN \
-  --context project_context.yaml
+Use CIDRA snippets for quick activation. See `Protocols/.vscode/cidra.code-snippets`.
 
-# Generate recommendation
-python THE_RECOMMENDER_AGENT/scripts/recommend.py \
-  --component WD/SCREENS/03_V_DETAIL_SCREEN \
-  --output THE_RECOMMENDER_AGENT/RECOMMENDATIONS/V_DETAIL_SCREEN/
-
-# Compare technologies
-python THE_RECOMMENDER_AGENT/scripts/tech_compare.py \
-  --legacy ABAP \
-  --alternatives 3
-
-# Assess risks
-python THE_RECOMMENDER_AGENT/scripts/risk_assess.py \
-  --component WD/SCREENS/03_V_DETAIL_SCREEN
-
-# Calculate ROI
-python THE_RECOMMENDER_AGENT/scripts/roi_calc.py \
-  --component WD/SCREENS/03_V_DETAIL_SCREEN \
-  --timeline 12 \
-  --budget 300000
+### Slash Commands (if skills.yaml is loaded)
 ```
+/recommend [component]         - Full recommendation dialog
+/recommend:compare [t1] [t2]   - Compare two technologies
+/recommend:risk [component]    - Risk assessment only
+```
+
+> **Note**: Python automation scripts are planned for future implementation.
+> Current execution model is prompt-driven via Cursor, Claude Code, or VS Code with AI extension.
 
 ---
 

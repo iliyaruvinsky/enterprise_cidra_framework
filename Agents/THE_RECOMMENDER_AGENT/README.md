@@ -42,17 +42,20 @@ Timeline: 3 months
 Budget: $50K
 ```
 
-### 2. In VS Code (Automated)
+### 2. In VS Code (With AI Extension)
+
+Use CIDRA snippets or type directly in Copilot/Claude chat:
+```
+@THE_RECOMMENDER_AGENT/agent_specification.md
+Recommend modernization for [COMPONENT_NAME]
+```
+
+### 3. In Claude Code (Prompt-Based)
 
 ```
-Ctrl+Shift+P → Tasks: Run Task → 🎯 Recommender: Analyze Component
-```
-
-### 3. In Claude Code (Python Scripts)
-
-```bash
-python THE_RECOMMENDER_AGENT/scripts/analyze.py --component WD/SCREENS/17_V_DIAGNOSIS_SCREEN
-python THE_RECOMMENDER_AGENT/scripts/recommend.py
+Read @THE_RECOMMENDER_AGENT/agent_specification.md and analyze
+component documentation at Screens/17_V_DIAGNOSIS_SCREEN/.
+Produce modernization recommendations following the 5-phase process.
 ```
 
 ---
@@ -214,17 +217,17 @@ Phase 3: Scale (12 months, $175K)
 ✅ **No setup** - Works immediately
 **Best for**: Quick decisions, exploring options
 
-### Option 2: VS Code Tasks (Recommended for Batch Processing)
-✅ **Automated** - One-click for all components
-✅ **Repeatable** - Consistent methodology
+### Option 2: VS Code (With AI Extension)
 ✅ **Integrated** - Native VS Code experience
-**Best for**: Analyzing multiple components, team workflows
+✅ **Repeatable** - Consistent methodology via snippets
+✅ **Team-friendly** - Share snippets across team
+**Best for**: VS Code users, team workflows
 
-### Option 3: Python Scripts (Recommended for Customization)
-✅ **Flexible** - Full control over parameters
-✅ **Scriptable** - Integrate into CI/CD
-✅ **Extensible** - Customize for your needs
-**Best for**: Advanced users, custom workflows
+### Option 3: Claude Code (Recommended for CLI Users)
+✅ **Flexible** - Full control over prompts
+✅ **Direct** - No IDE required
+✅ **Powerful** - Access to all agent capabilities
+**Best for**: Command-line users, scripted workflows
 
 ---
 

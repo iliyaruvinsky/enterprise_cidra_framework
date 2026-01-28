@@ -174,25 +174,30 @@ Output to: CHUNKS/screens_01-10.json
 
 ---
 
-## 🛠️ Using VS Code Tasks
+## 🛠️ Using VS Code with AI Extensions
 
-**Instead of typing in chat, use automated tasks:**
+**If using VS Code with Claude extension or GitHub Copilot Chat:**
 
-### Run Task
+### Quick Activation
+Use CIDRA snippets (if installed) or type directly:
+
 ```
-Ctrl+Shift+P → Tasks: Run Task → Select:
-- 🔪 Chunker: Analyze Codebase
-- 🔪 Chunker: Generate Chunks
-- 🔪 Chunker: Build Relationships
-- 🔪 Chunker: Export to Vector DB
-- 🔪 Chunker: Complete Pipeline (all above)
+@THE_CHUNKER_AGENT/agent_specification.md
+Chunk my codebase using the 5-phase workflow.
+```
+
+### Slash Commands (if skills.yaml is loaded)
+```
+/chunk [path]           - Main chunking command
+/chunk:analyze [path]   - Preview what will be chunked
+/chunk:status           - Check progress
 ```
 
 **Benefits**:
-- One-click execution
-- Progress tracking
-- Error handling
-- Automated workflow
+- Prompt-driven flexibility
+- Context-aware chunking
+- Interactive refinement
+- No script dependencies
 
 ---
 
@@ -614,34 +619,27 @@ Final pass: Achieve 95%+ quality
 
 1. **Export to Vector DB**
    ```
-   python THE_CHUNKER_AGENT/scripts/export_vectordb.py \
-     --chunks CHUNKS/repository.json \
-     --format pinecone
+   Ask Cursor:
+   "Export CHUNKS/repository.json to Pinecone-compatible format (vectors.jsonl)"
    ```
 
 2. **Set Up RAG System**
-   ```
-   - Upload vectors to Pinecone
+   - Upload vectors to your chosen vector DB (Pinecone, Chroma, etc.)
    - Configure retrieval parameters
    - Test queries
    - Optimize as needed
-   ```
 
 3. **Document Results**
-   ```
-   - Save chunking strategy
+   - Save chunking strategy used
    - Record quality metrics
    - Document any custom rules
    - Share with team
-   ```
 
 4. **Maintain Repository**
-   ```
-   - Re-chunk when code changes
-   - Update metadata
-   - Rebuild relationships
+   - Re-chunk when code changes significantly
+   - Update metadata as business logic evolves
+   - Rebuild relationships periodically
    - Keep embeddings fresh
-   ```
 
 ---
 

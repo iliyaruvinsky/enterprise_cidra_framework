@@ -47,12 +47,11 @@ Follow the 5-phase workflow.
 Ctrl+Shift+P → Tasks: Run Task → 🔪 Chunker: Complete Pipeline
 ```
 
-### 3. In Claude Code (Python Scripts)
+### 3. In Claude Code (Prompt-Based)
 
-```bash
-python THE_CHUNKER_AGENT/scripts/analyze.py --path .
-python THE_CHUNKER_AGENT/scripts/chunk.py
-python THE_CHUNKER_AGENT/scripts/export_vectordb.py
+```
+Read @THE_CHUNKER_AGENT/agent_specification.md and follow the 5-phase workflow
+to chunk my codebase at [path]. Output to CHUNKS/ directory.
 ```
 
 ---
@@ -144,17 +143,13 @@ THE_CHUNKER_AGENT/
 ├── agent_specification.md      (Complete agent design)
 ├── chunking_strategies.yaml    (Language-specific rules)
 ├── cursor_integration.md       (Cursor usage guide)
-├── vscode_integration.md       (VS Code usage guide)
-├── claude_code_integration.md  (Claude Code usage)
+├── skills.yaml                 (Slash command definitions)
 ├── README.md                   (This file)
-└── scripts/
-    ├── analyze.py              (Phase 1: Analysis)
-    ├── chunk.py                (Phase 2: Chunking)
-    ├── metadata.py             (Phase 3: Metadata generation)
-    ├── relationships.py        (Phase 4: Relationship mapping)
-    ├── export_vectordb.py      (Phase 5: Export)
-    └── utils.py                (Helper functions)
+└── INTEGRATION_COMPLETE.md     (Integration status)
 ```
+
+> **Note**: The Chunker operates as a prompt-driven agent via Cursor, Claude Code, or VS Code.
+> Automation scripts are planned for future implementation.
 
 ---
 
@@ -219,11 +214,11 @@ Power AI assistants with deep code understanding via optimized chunks.
 ✅ **Integrated** - Native VS Code experience
 **Best for**: Regular use, team workflows, CI/CD
 
-### Option 3: Python Scripts (Recommended for Customization)
-✅ **Flexible** - Full control over parameters
-✅ **Scriptable** - Integrate into pipelines
-✅ **Extensible** - Modify for your needs
-**Best for**: Advanced users, custom workflows, automation
+### Option 3: Claude Code (Recommended for CLI Users)
+✅ **Flexible** - Full control over workflow
+✅ **Direct** - No IDE required
+✅ **Powerful** - Access to all agent capabilities
+**Best for**: Command-line users, scripted workflows
 
 ---
 
@@ -233,8 +228,7 @@ Power AI assistants with deep code understanding via optimized chunks.
 - **[Agent Specification](agent_specification.md)** - Complete design and capabilities
 - **[Chunking Strategies](chunking_strategies.yaml)** - Language-specific rules and configuration
 - **[Cursor Integration](cursor_integration.md)** - Using in Cursor IDE
-- **[VS Code Integration](vscode_integration.md)** - Using in VS Code
-- **[Claude Code Integration](claude_code_integration.md)** - Using in Claude Code
+- **[Skills Definition](skills.yaml)** - Slash commands and agent capabilities
 
 ### Guides
 1. **Getting Started** - [cursor_integration.md#quick-start](cursor_integration.md)
