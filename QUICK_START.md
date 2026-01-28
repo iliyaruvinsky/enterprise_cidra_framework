@@ -4,6 +4,17 @@
 
 ---
 
+## 🤖 For AI Agents
+
+**First time here?** Read these files in order:
+1. This file (`QUICK_START.md`) - Overview
+2. `Agents/registry.yaml` - Pipeline and agent capabilities
+3. `Agents/shared/agent_handoff_protocol.md` - How agents communicate
+
+**To activate an agent**, use: `@Agents/THE_[AGENT]_AGENT/agent_specification.md`
+
+---
+
 ## 🎯 What is CIDRA?
 
 **CIDRA** = **C**hunker + **I**nterpreter + **D**ocumenter + **R**ecommender + **A**pplicator
