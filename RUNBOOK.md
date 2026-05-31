@@ -101,37 +101,27 @@ You should see `.cidra\Agents\` containing 4 agent folders including `THE_BRAINS
 
 ## Step 5 — Register the slash commands
 
-The installer copies the framework's `.cidra/` folder. To make slash commands work in Cursor/VS Code, copy the command templates into `.claude\commands\`:
+The installer copies `.cidra\` but not (yet) the slash command files. Copy the templates from the framework's `Protocols\.claude\commands\` folder into your project:
 
 **POWERSHELL:**
 
 ```powershell
-# Make the commands directory
-New-Item -ItemType Directory -Path "$project\.claude\commands\brainstorm" -Force | Out-Null
-New-Item -ItemType Directory -Path "$project\.claude\commands\chunk" -Force | Out-Null
-New-Item -ItemType Directory -Path "$project\.claude\commands\document" -Force | Out-Null
-New-Item -ItemType Directory -Path "$project\.claude\commands\recommend" -Force | Out-Null
-
-# Copy template commands from a reference project (the Maccabi project has them) OR
-# create them manually following the patterns in:
-#   .cidra\Agents\<AGENT>\skills.yaml
-# (Future: installer will auto-create these.)
+Copy-Item -Path "$framework\Protocols\.claude\commands" `
+          -Destination "$project\.claude\" -Recurse -Force
 ```
 
-**Minimum file you must create yourself** — `.claude\commands\brainstorm.md`:
+That's it. All 14 slash command templates (4 entry points + 10 sub-commands) land at `$project\.claude\commands\`. They are project-agnostic — the same templates work for any CIDRA project.
 
-```markdown
----
-description: CIDRA Stage 0 — goal elicitation, gap analysis, blueprint
----
+**Verify:**
 
-Execute THE_BRAINSTORMER_AGENT per `.cidra/Agents/THE_BRAINSTORMER_AGENT/agent_specification.md`.
-Run the 5-phase workflow. Produce BRAINSTORM_OUTPUT.yaml, MISSING_INPUTS.md, BRAINSTORM_DIALOG_LOG.md at project root.
+```powershell
+Get-ChildItem "$project\.claude\commands" -Recurse -File | Select-Object Name
+# Expected: brainstorm.md, chunk.md, document.md, recommend.md +
+#           brainstorm/{format,gap,status}.md, chunk/{analyze,status}.md,
+#           document/{fix,setup,validate}.md, recommend/{compare,risk}.md
 ```
 
-Repeat for `/chunk`, `/document`, `/recommend` (template patterns in each agent's `skills.yaml`).
-
-> **Tip:** if you have a previously-set-up CIDRA project (e.g. the Maccabi RK1 project), copy its entire `.claude\commands\` folder — same templates work for any project.
+> **Future:** the installer will copy these automatically; this step will disappear.
 
 ---
 

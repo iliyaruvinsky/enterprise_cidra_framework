@@ -15,6 +15,15 @@ validation/
 .claude/
 .windsurf/
 
+# Exception: Protocols/ contains TEMPLATE versions of IDE folders that are
+# part of the framework and meant to be installed into target projects.
+!Protocols/.claude/
+!Protocols/.claude/**
+!Protocols/.vscode/
+!Protocols/.vscode/**
+!Protocols/.windsurf/
+!Protocols/.windsurf/**
+
 # OS specific
 .DS_Store
 Thumbs.db
