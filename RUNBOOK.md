@@ -89,6 +89,19 @@ cd $framework\Scripts
     -SourcePath    "C:\incoming\customer_code"
 ```
 
+**AS/400 source-library example** — append `.cob` to every COBOL member so the chunker's `extension_matching` (priority 1) picks them up alongside the new `source_library_patterns` regexes (priority 4 — confirming signal):
+
+```powershell
+.\bootstrap.ps1 `
+    -ProjectFolder "pharmacy_cidra" `
+    -ComponentId   "RK1_PHARMACY_JOURNAL" `
+    -SourcePath    "G:\My Drive\Maccabi AI\רוקחות_פקודות_יומן" `
+    -SourceFilter  "QCBLLESRC.*" `
+    -SourceRenameTo ".cob"
+```
+
+> `-SourceFilter "QCBLLESRC.*"` uses the Win32 glob via `Get-ChildItem -Filter`, which may have legacy 8.3 short-name fallback. For extensionless AS/400 exports, prefer `-Filter '*'` plus explicit `-SourceExclude` over a strict `-Filter "QCBLLESRC.*"`.
+
 Optional flags:
 
 | Flag | Purpose |
@@ -96,6 +109,7 @@ Optional flags:
 | `-ReferenceDocsPath "<path>"` | Folder (or single file) of reference materials (spec docs, sample CSVs) — copied to `<project>\Reference\` (NOT project root) so they cannot collide with downstream artifacts |
 | `-SourceFilter "*.txt"` | Glob filter for which source files to copy (default `*`) |
 | `-SourceExclude @('*.csv','*.exe')` | Glob exclusions during source copy (default excludes binaries and sample data — `*.csv`, `*.xlsx`, `*.exe`, `*.dll`, `*.zip`, etc.). Pass `@()` to disable. |
+| `-SourceRenameTo ".cob"` | Append the given extension as a final suffix to every copied source file (e.g. `".cob"` turns `QCBLLESRC.SEWKXFKB` into `QCBLLESRC.SEWKXFKB.cob`). Designed for AS/400 source-library exports so the chunker and IDE recognize the language. Idempotent — files already ending in the suffix are left alone (mixed-case is canonicalized to lowercase). Skips on collision or MAX_PATH (>259 chars on PS 5.1); surfaced in the completion sentinel. Changing the value between runs requires `-ForceSource` (stale renamed files are wiped before re-copy). **CAUTION**: append (not replace) semantics — `README` becomes `README.cob`; `report.txt` becomes `report.txt.cob`. |
 | `-ProjectRoot "D:\work"` | Override the default `C:\projects` parent directory |
 | `-FrameworkPath "<path>"` | Override the default framework location (`C:\Users\<USER>\tools\enterprise_cidra_framework`) |
 | `-Ide vscode` | Prefer VS Code over Cursor for the auto-launch (default `cursor`) |

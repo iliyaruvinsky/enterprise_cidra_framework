@@ -65,6 +65,43 @@
         *.jpg, *.jpeg, *.gif, *.pdf
     Pass an empty array (@()) to disable all exclusions.
 
+.PARAMETER SourceRenameTo
+    Optional. Extension to APPEND to every copied source file after the copy
+    completes. Designed for AS/400 source-library exports whose filenames are
+    library.member style (e.g. QCBLLESRC.SEWKXFKB) and need a language hint
+    suffix so downstream tooling (chunker, IDE syntax highlighting) recognizes
+    them.
+
+    Append semantics -- the original filename is preserved; only the new
+    extension is added as a final suffix:
+        QCBLLESRC.SEWKXFKB  ->  QCBLLESRC.SEWKXFKB.cob
+        my_program          ->  my_program.cob
+        README              ->  README.cob   (CAUTION: README is now COBOL!)
+        report.txt          ->  report.txt.cob   (NOT replaced; appended)
+
+    Idempotent -- files whose name already ends with this extension
+    (case-insensitive) are left untouched (mixed-case suffixes are
+    canonicalized to lowercase to keep downstream regex matching consistent).
+
+    Collision handling -- if appending the extension would overwrite an
+    existing file (e.g. both QCBLLESRC.SEWKXFKB AND QCBLLESRC.SEWKXFKB.cob
+    are in the source), the rename is SKIPPED with a warning and the skipped
+    count is surfaced in the completion sentinel. Re-run with -ForceSource
+    after resolving collisions in the source library.
+
+    MAX_PATH handling -- on Windows PowerShell 5.1 without LongPathsEnabled,
+    rename is SKIPPED if the resulting path would exceed 259 characters.
+
+    Re-run semantics -- changing -SourceRenameTo between runs requires
+    -ForceSource. Without -ForceSource, the script refuses to mix a fresh
+    rename value with stale renamed files from a prior run.
+
+    Pass with the leading dot (e.g. ".cob"). A missing leading dot will be
+    prepended automatically. Pass "" (default) to disable renaming.
+
+    Example:
+        -SourcePath C:\exports\QCBLLESRC -SourceRenameTo ".cob"
+
 .PARAMETER ProjectRoot
     Optional parent directory where the project folder is created.
     Default: C:\projects
@@ -163,6 +200,15 @@ param(
         '*.7z','*.png','*.jpg','*.jpeg','*.gif','*.pdf'
     ),
 
+    # Optional: append this extension to every copied source file.
+    # APPEND mode -- the original name is preserved; the new extension is added
+    # as a final suffix (e.g. "QCBLLESRC.SEWKXFKB" -> "QCBLLESRC.SEWKXFKB.cob").
+    # If a file already ends with this extension (case-insensitive on NTFS),
+    # the file is canonicalized to lowercase suffix but not double-renamed.
+    # Pass with leading dot (e.g. ".cob"); a missing leading dot is added.
+    # Pass "" (default) to disable renaming.
+    [string]$SourceRenameTo = "",
+
     [string]$ProjectRoot = "C:\projects",
 
     [string]$FrameworkPath = "",
@@ -217,6 +263,15 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
 # Resolve framework path default lazily (depends on $env:USERNAME at runtime).
 if ([string]::IsNullOrWhiteSpace($FrameworkPath)) {
     $FrameworkPath = Join-Path "C:\Users\$env:USERNAME\tools" "enterprise_cidra_framework"
+}
+
+# Normalize -SourceRenameTo: ensure leading dot if non-empty; canonicalize to
+# lowercase so the EndsWith / idempotency check has a stable target.
+if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo)) {
+    if (-not $SourceRenameTo.StartsWith('.')) {
+        $SourceRenameTo = '.' + $SourceRenameTo
+    }
+    $SourceRenameTo = $SourceRenameTo.ToLowerInvariant()
 }
 
 # Detect whether THIS script is running from inside a framework checkout. If so,
@@ -384,6 +439,9 @@ function Show-Banner {
     Write-Host "  Parent Dir     : $ProjectRoot"
     Write-Host "  Project Path   : $Project"
     Write-Host "  Framework Path : $FrameworkPath"
+    if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo)) {
+        Write-Host "  Rename suffix  : $SourceRenameTo  (APPEND mode)" -ForegroundColor $C_Gray
+    }
     if ($FrameworkAlreadyAtScriptLocation) {
         Write-Host "                   (detected: bootstrap is running from this framework)" -ForegroundColor $C_Gray
     }
@@ -799,17 +857,57 @@ $expectedExcludedCount = (Get-ChildItem -LiteralPath $SourcePath -File -Recurse 
 # Decide whether we can skip the copy: only if a previous run wrote the
 # sentinel AND its expected count matches today's enumeration.
 $canSkip = $false
+$prevRenameTo = $null
+$prevSentinelHadRenameField = $false
 if ((Test-Path -LiteralPath $SrcCopyDoneSentinel) -and -not $ForceSource) {
     try {
         $prev = Get-Content -LiteralPath $SrcCopyDoneSentinel -Raw | ConvertFrom-Json
-        if ($prev.SourcePath -eq $SourcePath -and `
-            $prev.ExpectedCount -eq $expectedCount -and `
-            $prev.Filter -eq $SourceFilter) {
+
+        # Detect whether the prior sentinel was written by a pre-feature
+        # bootstrap (no RenameTo field) or a feature-aware one (field present,
+        # possibly empty). Cannot rely on $null coercion alone: PSCustomObject
+        # missing-property semantics differ between PS 5.1 and PS 7.
+        if ($prev.PSObject.Properties.Name -contains 'RenameTo') {
+            $prevSentinelHadRenameField = $true
+            $prevRenameTo = [string]$prev.RenameTo
+        } else {
+            $prevSentinelHadRenameField = $false
+            $prevRenameTo = $null
+        }
+
+        $sourceMatches = ($prev.SourcePath -eq $SourcePath)
+        $countMatches  = ($prev.ExpectedCount -eq $expectedCount)
+        $filterMatches = ($prev.Filter -eq $SourceFilter)
+
+        # RenameTo comparison: missing field on old sentinel is treated as ''
+        # (since the old bootstrap could not rename). New runs with an empty
+        # -SourceRenameTo match cleanly; new runs WITH -SourceRenameTo on an
+        # old project force a re-copy (see message below).
+        $effectivePrevRename = if ($prevSentinelHadRenameField) { $prevRenameTo } else { '' }
+        $renameMatches = ($effectivePrevRename -eq $SourceRenameTo)
+
+        if ($sourceMatches -and $countMatches -and $filterMatches -and $renameMatches) {
             $canSkip = $true
         } else {
-            Write-Info "Previous copy sentinel does not match current inputs (source moved or filter changed). Re-copying."
+            if (-not $renameMatches) {
+                if (-not $prevSentinelHadRenameField) {
+                    Write-Warn "Previous run used an older bootstrap that did not record RenameTo."
+                    Write-Warn "Current run has -SourceRenameTo '$SourceRenameTo'. Re-copying from source."
+                    Write-Warn "If 'Source Code\' contains hand-edits, back them up before continuing."
+                } else {
+                    Write-Warn "Previous -SourceRenameTo was '$prevRenameTo'; current is '$SourceRenameTo'."
+                    if (-not $ForceSource) {
+                        throw "Changing -SourceRenameTo between runs requires -ForceSource (so stale renamed files in 'Source Code\' are wiped first to avoid duplicate-detection downstream)."
+                    }
+                    Write-Warn "Re-copying from source ('-ForceSource' was passed)."
+                }
+            } else {
+                Write-Info "Previous copy sentinel does not match current inputs (source moved or filter changed). Re-copying."
+            }
         }
     } catch {
+        # Rethrow our explicit -ForceSource guard so it's not swallowed.
+        if ($_.Exception.Message -match 'requires -ForceSource') { throw }
         Write-Info "Previous copy sentinel is unreadable. Re-copying."
     }
 }
@@ -822,9 +920,42 @@ if ($canSkip) {
         Remove-Item -LiteralPath $SrcCopyDoneSentinel -Force
     }
 
+    # When -SourceRenameTo changes between runs (or pre-feature sentinel -> new
+    # rename value), we MUST wipe Source Code\ before recopying. Otherwise
+    # stale "QCBLLESRC.X.cob" files from a prior run sit next to the freshly
+    # copied "QCBLLESRC.X" and the chunker double-counts.
+    $shouldWipeSourceCode = $false
+    if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo) -or `
+        ($prevSentinelHadRenameField -and -not [string]::IsNullOrWhiteSpace($prevRenameTo))) {
+        if ((Test-Path -LiteralPath $SourceCodeDir) -and -not (Test-WhatIfMode)) {
+            $existing = @(Get-ChildItem -LiteralPath $SourceCodeDir -File -Recurse -ErrorAction SilentlyContinue)
+            if ($existing.Count -gt 0) {
+                $shouldWipeSourceCode = $true
+            }
+        }
+    }
+    if ($shouldWipeSourceCode) {
+        Write-Info "Wiping Source Code\ contents before re-copy (-SourceRenameTo changed or new run with rename suffix)."
+        Get-ChildItem -LiteralPath $SourceCodeDir -Recurse -Force -ErrorAction SilentlyContinue |
+            Sort-Object -Property FullName -Descending |
+            Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+    }
+
+    # Initialize counters in SCRIPT scope so they survive the Invoke-Action
+    # scriptblock invocation pattern (& $Block creates a child scope; vars
+    # declared inside don't leak out). Sentinel write also happens INSIDE the
+    # block as before -- this is belt-and-suspenders for any future refactor
+    # that moves the sentinel write outside.
+    $script:srcCopied   = 0
+    $script:srcRenamed  = 0
+    $script:srcSkipped  = 0   # rename skips (collision / MAX_PATH)
+
     Invoke-Action -Target $SourceCodeDir -Action "Copy source files (literal-path enumeration)" -Block {
-        $copied = 0
+        $copied   = 0
+        $renamed  = 0
+        $skipped  = 0
         $sourceRoot = (Resolve-Path -LiteralPath $SourcePath).Path.TrimEnd('\','/')
+
         foreach ($f in $expectedFiles) {
             $rel = $f.FullName.Substring($sourceRoot.Length).TrimStart('\','/')
             $dest = Join-Path $SourceCodeDir $rel
@@ -834,20 +965,93 @@ if ($canSkip) {
             }
             Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
             $copied++
+
+            # APPEND-rename pass: add -SourceRenameTo as a final suffix when set.
+            if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo)) {
+                $leaf = Split-Path -LiteralPath $dest -Leaf
+                $leafLower = $leaf.ToLowerInvariant()
+                $suffixLower = $SourceRenameTo.ToLowerInvariant()
+
+                if ($leafLower.EndsWith($suffixLower)) {
+                    # Already ends with the suffix (any case). Canonicalize to
+                    # lowercase suffix so source_library_patterns regexes (which
+                    # we keep case-insensitive but document as preferring
+                    # lowercase) match deterministically. NTFS preserves case
+                    # but is case-insensitive on lookup; rename to lowercase
+                    # works without collision against itself.
+                    if (-not $leaf.EndsWith($SourceRenameTo, [System.StringComparison]::Ordinal)) {
+                        $canonical = $leaf.Substring(0, $leaf.Length - $SourceRenameTo.Length) + $SourceRenameTo
+                        $canonicalPath = Join-Path $destDir $canonical
+                        # Two-step rename to force case change on case-insensitive FS.
+                        try {
+                            $tmpName = $leaf + '.cidra-case-tmp'
+                            Rename-Item -LiteralPath $dest -NewName $tmpName -ErrorAction Stop
+                            Rename-Item -LiteralPath (Join-Path $destDir $tmpName) -NewName $canonical -ErrorAction Stop
+                        } catch {
+                            Write-Warn "Could not canonicalize case for '$leaf': $($_.Exception.Message)"
+                            $skipped++
+                        }
+                    }
+                    # else: already canonical lowercase, nothing to do.
+                    continue
+                }
+
+                $newLeaf = $leaf + $SourceRenameTo
+                $newPath = Join-Path $destDir $newLeaf
+
+                # MAX_PATH guard (260 incl. terminator -> 259 usable on PS 5.1
+                # without LongPathsEnabled). Skip rather than fail the whole run.
+                if ($newPath.Length -gt 259) {
+                    Write-Warn "Skipping rename of '$leaf' -- target path would exceed 259 chars ($($newPath.Length))."
+                    $skipped++
+                    continue
+                }
+
+                # Collision guard: refuse to silently overwrite an existing
+                # file at the target name. Surface in sentinel; user resolves
+                # at the source library.
+                if (Test-Path -LiteralPath $newPath) {
+                    Write-Warn "Skipping rename of '$leaf' -- target '$newLeaf' already exists in destination."
+                    $skipped++
+                    continue
+                }
+
+                try {
+                    Rename-Item -LiteralPath $dest -NewName $newLeaf -ErrorAction Stop
+                    $renamed++
+                } catch {
+                    Write-Warn "Rename failed for '$leaf': $($_.Exception.Message)"
+                    $skipped++
+                }
+            }
         }
+
+        # Propagate counters to script scope so any future sentinel write or
+        # diagnostic outside this block sees real numbers, not $null.
+        $script:srcCopied  = $copied
+        $script:srcRenamed = $renamed
+        $script:srcSkipped = $skipped
+
         if (-not (Test-WhatIfMode)) {
             $manifest = @{
-                SourcePath    = $SourcePath
-                Filter        = $SourceFilter
-                Exclude       = $SourceExclude
-                ExpectedCount = $expectedCount
-                CopiedCount   = $copied
-                ExcludedCount = $expectedExcludedCount
-                CopiedAt      = (Get-Date -Format "o")
+                SchemaVersion  = 2
+                SourcePath     = $SourcePath
+                Filter         = $SourceFilter
+                Exclude        = $SourceExclude
+                RenameTo       = $SourceRenameTo
+                ExpectedCount  = $expectedCount
+                CopiedCount    = $copied
+                RenamedCount   = $renamed
+                SkippedRenames = $skipped
+                ExcludedCount  = $expectedExcludedCount
+                CopiedAt       = (Get-Date -Format "o")
             } | ConvertTo-Json -Depth 4
             Set-Content -LiteralPath $SrcCopyDoneSentinel -Value $manifest -Encoding UTF8
         }
         Write-Ok "Copied $copied file(s) to Source Code\. Excluded $expectedExcludedCount file(s) by extension."
+        if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo)) {
+            Write-Ok "Renamed $renamed file(s) with suffix '$SourceRenameTo' ($skipped skipped due to collision / MAX_PATH)."
+        }
         if ($expectedExcludedCount -gt 0) {
             Write-Info "Excluded extensions: $($SourceExclude -join ', '). Pass -SourceExclude @() to disable."
         }

@@ -1,12 +1,12 @@
 # THE_CHUNKER_AGENT - Skills Definition
-# Version: 1.0.0
+# Version: 1.1.0
 # Framework: Universal CIDRA
 
 ---
 
 agent:
   name: "THE_CHUNKER_AGENT"
-  version: "1.0.0"
+  version: "1.1.0"
   mission: "Create optimized code chunks for LLM consumption and generate instructive prompts for THE_DOCUMENTER"
 
   supported_languages:
@@ -27,10 +27,56 @@ agent:
       patterns: ["CREATE", "SELECT", "INSERT", "UPDATE"]
     - name: "COBOL"
       extensions: ["*.cbl", "*.cob"]
+      # AS/400 source physical file (Q*SRC) member naming: <SourcePF>.<MEMBER>
+      # NOTE for chunker implementers: match these regexes against the
+      # FILE BASENAME ONLY (System.IO.Path.GetFileName) -- NOT the full path.
+      # Patterns are case-insensitive via (?i) so mixed-case git checkouts work.
+      # IBM i system names: up to 10 chars, can start with A-Z/#/$/@ or digit
+      # (some shops). Excludes well-known non-member artifacts (FILE, MBRLIST,
+      # BACKUP, SAVF) commonly produced by export tools.
+      # Post-rename .cob files are caught by extension_matching above and do
+      # not need a duplicate source_library_patterns entry.
+      source_library_patterns:
+        - "(?i)^QCBLLESRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QLBLSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
       patterns: ["IDENTIFICATION DIVISION", "PROCEDURE DIVISION"]
     - name: "RPG/AS400"
       extensions: ["*.rpgle", "*.sqlrpgle", "*.rpg"]
-      patterns: ["dcl-proc", "dcl-ds", "begsr"]
+      # AS/400 source physical file (Q*SRC) member naming for ILE RPG, OPM RPG,
+      # ILE service program source, and embedded-SQL RPG.
+      # QSQLSRC is shared with COBOL embedded-SQL -- content_analysis should
+      # disambiguate by looking for "IDENTIFICATION DIVISION" vs "dcl-proc".
+      source_library_patterns:
+        - "(?i)^QRPGLESRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QRPGSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QSRVSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QSQLSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+      patterns: ["dcl-proc", "dcl-ds", "begsr", "C ", "H ", "F "]
+    - name: "CL/AS400"
+      extensions: ["*.clle", "*.clp"]
+      # AS/400 source physical file (Q*SRC) member naming for CL (ILE + OPM)
+      # and command source. .clp collides with Acorn Clipboard files in the
+      # wild; rely on content_analysis (PGM / ENDPGM markers) to confirm.
+      source_library_patterns:
+        - "(?i)^QCLSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QCLLESRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QCMDSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+      patterns: ["PGM", "DCL ", "MONMSG", "ENDPGM"]
+    - name: "DDS/AS400"
+      # NOTE: *.pf and *.lf are intentionally OMITTED -- they collide with
+      # Windows Prefetch (*.pf) and other formats. Raw exports must rely on
+      # source_library_patterns + content_analysis instead.
+      extensions: ["*.dds", "*.dspf", "*.prtf"]
+      # AS/400 source physical file (Q*SRC) member naming for DDS (PF/LF/DSPF/
+      # PRTF -- distinguish by content), DDL, panel groups, and menus.
+      source_library_patterns:
+        - "(?i)^QDDSSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QDDLSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+        - "(?i)^QPNLSRC\\.(?!FILE$|MBRLIST$|BACKUP$|SAVF$)[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$"
+      # Column-tolerant patterns -- AS/400 DDS uses fixed columns but git's
+      # core.autocrlf and Hebrew-aware editors can normalize whitespace; use
+      # whitespace-flexible regexes for content_analysis.
+      patterns: ["^A\\s+R\\s+\\w+", "^A\\s+\\w+\\s+\\d+[AS]", "REF\\(", "UNIQUE"]
     - name: "JavaScript/TypeScript"
       extensions: ["*.js", "*.ts", "*.jsx", "*.tsx"]
       patterns: ["function", "const", "import", "export"]
@@ -153,13 +199,34 @@ internal_skills:
     detection_methods:
       - method: "extension_matching"
         priority: 1
-        description: "Match file extension to known languages"
+        description: "Match file extension to known languages (glob, e.g. *.cbl)"
       - method: "content_analysis"
         priority: 2
         description: "Analyze file content for language-specific patterns"
       - method: "keyword_detection"
         priority: 3
         description: "Look for language-specific keywords"
+      # NEW v1.1.0: added at priority 4 (lowest) to preserve backward-compat
+      # for any consumer that referenced priorities 1-3 by number. Despite the
+      # numerical priority, source_library_pattern is treated as a CONFIRMING
+      # signal -- a positive regex match alone is necessary but not sufficient
+      # for language assignment; content_analysis (priority 2) should also
+      # agree before the language is declared. This prevents false positives
+      # on filenames like QCBLLESRC.BACKUP that match the shape but aren't
+      # actual COBOL members.
+      - method: "source_library_pattern"
+        priority: 4
+        description: >
+          Match the FILE BASENAME (not full path) against AS/400 source-
+          physical-file member naming regexes declared in
+          supported_languages[].source_library_patterns
+          (e.g. (?i)^QCBLLESRC\.[A-Z0-9#$@_][A-Z0-9#$@_]{0,9}$). Applies to
+          IBM i exports where the filename is <SourcePF>.<MEMBER> and a
+          conventional language extension is absent. Post-rename files (e.g.
+          after bootstrap.ps1 -SourceRenameTo .cob) are matched by
+          extension_matching at priority 1 and do not need this method.
+
+    dedup_strategy: "first_match_wins_by_priority"
 
     output:
       language: "string"
@@ -458,3 +525,12 @@ version_history:
       - "Added explicit React language support with component patterns"
       - "Added Graph DB (Neo4j, ArangoDB, Amazon Neptune) export format"
       - "Aligned with agent_specification.md requirements"
+  - version: "1.1.0"
+    date: "2026-05"
+    changes:
+      - "Added source_library_patterns field on supported_languages[] for AS/400 Q*SRC.<MEMBER> filename detection (case-insensitive)"
+      - "Added CL/AS400 and DDS/AS400 entries; extended COBOL/RPG/AS400 coverage to QSQLSRC, QSRVSRC, QCMDSRC, QLBLSRC, QDDLSRC, QPNLSRC"
+      - "Added detection_method 'source_library_pattern' at priority 4 (preserves backward-compat numbering for priorities 1-3)"
+      - "Added dedup_strategy: first_match_wins_by_priority to disambiguate dual matches"
+      - "Excluded common Q*SRC non-member artifacts (FILE, MBRLIST, BACKUP, SAVF) via negative-lookahead in regexes"
+      - "Omitted *.pf and *.lf from DDS extensions to avoid collision with Windows Prefetch and other formats"
