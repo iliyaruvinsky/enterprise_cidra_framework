@@ -6,72 +6,130 @@
 
 ---
 
-## Prerequisites
+## Prerequisites — install once per machine
 
-Install once (if not already on the machine):
+**POWERSHELL — copy-paste this whole block** (it skips anything already installed):
 
-| Tool | Required for | Verify |
-|------|--------------|--------|
-| **Git** | Cloning the framework | `git --version` |
-| **PowerShell 5.1+** | All shell commands (built-in on Win10/11) | `$PSVersionTable.PSVersion` |
-| **Cursor** or **VS Code** | Running CIDRA slash commands | Open the IDE |
-| **Claude Code extension** | Slash command execution | Sign in with your Anthropic key |
-| **Node.js + npm** *(optional)* | Pre-rendering Mermaid diagrams to SVG | `node --version` |
-| **mmdc (mermaid-cli)** *(optional)* | Same as above | `mmdc --version` (or `npm install -g @mermaid-js/mermaid-cli`) |
+```powershell
+# Git (required)
+winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
+
+# Cursor (required — or use VS Code: winget install --id Microsoft.VisualStudioCode)
+winget install --id Anysphere.Cursor -e --accept-source-agreements --accept-package-agreements
+
+# Node.js LTS (optional — only needed if you'll pre-render Mermaid diagrams)
+winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
+
+# Python 3.11 (optional — only needed if you'll verify with Playwright)
+winget install --id Python.Python.3.11 -e --accept-source-agreements --accept-package-agreements
+```
+
+After install, **close and reopen PowerShell** so the new tools land on PATH.
+
+**Optional global npm package** (only if you installed Node):
+
+```powershell
+npm install -g @mermaid-js/mermaid-cli
+```
+
+**Optional Python packages** (only if you installed Python):
+
+```powershell
+pip install playwright
+playwright install chromium
+```
+
+**Inside Cursor / VS Code:** install the **Claude Code** extension and sign in with your Anthropic key.
+
+**Verify everything is on PATH:**
+
+```powershell
+git --version
+node --version          # only if you installed Node
+mmdc --version          # only if you installed mermaid-cli
+python --version        # only if you installed Python
+```
+
+---
+
+## Step 0 — Set your variables (do this once per project)
+
+**POWERSHELL — edit the two CHANGE-ME values, then copy-paste the whole block:**
+
+```powershell
+# === CHANGE THESE TWO ===
+$projectName = "my_project"       # ASCII, no spaces — used as folder name
+$component   = "MY_COMPONENT"     # logical name for what you're documenting, e.g. "RK1_PHARMACY_JOURNAL"
+
+# === leave these as-is unless you have a strong reason ===
+$framework   = "C:\Users\$env:USERNAME\tools\enterprise_cidra_framework"
+$projectRoot = "C:\projects"
+$project     = "$projectRoot\$projectName"
+
+# Confirm
+Write-Output "Framework:   $framework"
+Write-Output "Project:     $project"
+Write-Output "Component:   $component"
+```
+
+Every step below uses `$framework`, `$project`, and `$component` — no further variable editing.
 
 ---
 
 ## Step 1 — Clone the framework (once per machine)
 
-Pick a tools folder. Suggested: `C:\Users\<you>\tools\`.
-
 **POWERSHELL:**
 
 ```powershell
-$framework = "C:\Users\$env:USERNAME\tools\enterprise_cidra_framework"
 New-Item -ItemType Directory -Path (Split-Path $framework) -Force | Out-Null
-git clone https://github.com/iliyaruvinsky/enterprise_cidra_framework.git $framework
+if (Test-Path $framework) {
+    cd $framework; git pull
+} else {
+    git clone https://github.com/iliyaruvinsky/enterprise_cidra_framework.git $framework
+}
 ```
 
-To update later:
-
-```powershell
-cd $framework; git pull
-```
+(Idempotent — first run clones, later runs update.)
 
 ---
 
 ## Step 2 — Create the project working directory
 
-**Recommended location:** local NTFS drive (`C:\` or `D:\`), **not Google Drive** — Drive's `G:\My Drive\` is FAT32 (4 GB file limit, sync race conditions during long agent runs).
+**Recommended location:** local NTFS drive (`C:\`). **Do not use Google Drive** (`G:\My Drive\` is FAT32 — 4 GB file limit, sync race conditions during long agent runs).
 
 **POWERSHELL:**
 
 ```powershell
-$project = "C:\projects\<your_project_name>"
 New-Item -ItemType Directory -Path "$project\Source Code" -Force | Out-Null
+Write-Output "Created: $project\Source Code"
 ```
-
-Replace `<your_project_name>` with your project's name. Use ASCII-safe characters in the path if possible (avoid spaces and non-Latin characters if your toolchain is sensitive).
 
 ---
 
-## Step 3 — Add the source code
+## Step 3 — Add the source code + reference materials
 
-Copy the source files you want to document into `Source Code\`:
+Replace `<source_location>` with the path where your source files actually live, then run.
 
 **POWERSHELL:**
 
 ```powershell
-# Example: copy COBOL/ABAP/Python source from somewhere
-Copy-Item "C:\where_source_lives\*.cbl" -Destination "$project\Source Code\"
+$sourceLocation = "<source_location>"   # e.g. "C:\incoming\customer_code"
 
-# If your code came from a vendor system and has identification tags
-# (e.g. CA 2E COBOL right-aligned tags), strip them now — the chunker
-# expects clean source. Example strip is shown in Step 7.
+# Copy ALL source files (adjust filter for your case)
+Copy-Item "$sourceLocation\*" -Destination "$project\Source Code\" -Recurse -Force
+
+# Place reference materials (spec docs, sample data) at the PROJECT ROOT
+# Example:
+# Copy-Item "$sourceLocation\spec.docx"   -Destination $project
+# Copy-Item "$sourceLocation\samples\*.csv" -Destination $project
+
+Write-Output "Source copied to: $project\Source Code"
+Get-ChildItem "$project\Source Code" | Select-Object Name, Length | Format-Table -AutoSize
 ```
 
-Also place any **reference materials** at the project root (spec docs, sample data CSVs, etc.). The brainstormer will ask about them.
+The brainstormer will ask about the reference materials in Step 7.
+
+> **If your source has vendor identification tags** (CA 2E COBOL, etc.) — leave them for now. Strip them in Step 8 after the brainstormer runs.
 
 ---
 
@@ -127,11 +185,17 @@ Get-ChildItem "$project\.claude\commands" -Recurse -File | Select-Object Name
 
 ## Step 6 — Open the project in Cursor/VS Code
 
+**POWERSHELL:**
+
 ```powershell
-cursor $project    # or: code $project
+# Cursor (try in order — first one that's on PATH wins)
+& cursor $project 2>$null
+if ($LASTEXITCODE -ne 0) { & code $project }
 ```
 
-The IDE's Claude Code extension will discover the slash commands automatically. You should now see `/brainstorm`, `/chunk`, `/document`, `/recommend` (and their sub-commands) in the slash-command autocomplete.
+If neither command is on PATH, open the IDE manually and `File → Open Folder` → `$project`.
+
+The IDE's Claude Code extension will discover the slash commands automatically. Type `/` in a chat and you should see `/brainstorm`, `/chunk`, `/document`, `/recommend` (and their sub-commands) in autocomplete.
 
 ---
 
@@ -228,12 +292,12 @@ Output: `DOCUMENTER_PROJECT_CONFIG.yaml` at project root.
 
 ---
 
-## Step 11 — Stage 2 run: `/document <COMPONENT>`
+## Step 11 — Stage 2 run: `/document $component`
 
-Replace `<COMPONENT>` with a logical name for what you're documenting (e.g. `MY_PROGRAM`):
+In the Claude Code chat (substitute the value of `$component` you set in Step 0):
 
 ```
-/document MY_PROGRAM
+/document MY_COMPONENT
 ```
 
 The documenter will:
@@ -252,8 +316,10 @@ The documenter will:
 ## Step 12 — Validate
 
 ```
-/document:validate Screens\<COMPONENT>
+/document:validate Screens\MY_COMPONENT
 ```
+
+(Use the actual value of `$component` set in Step 0.)
 
 The validator runs a 100-point check:
 - File count = 7
@@ -267,7 +333,7 @@ The validator runs a 100-point check:
 **Target:** 100/100. Anything less, run:
 
 ```
-/document:fix Screens\<COMPONENT>
+/document:fix Screens\MY_COMPONENT
 ```
 
 …and re-validate.
@@ -291,8 +357,10 @@ Refreshes `MISSING_INPUTS.md` with the post-validation gap list. The customer se
 Only if `purpose` from `/brainstorm` included modernization:
 
 ```
-/recommend <COMPONENT>
+/recommend MY_COMPONENT
 ```
+
+(Use the actual value of `$component`.)
 
 The recommender runs a dialog (direction → options → confirmation), then produces:
 - `RECOMMENDATIONS\<COMPONENT>\RECOMMENDATION_REPORT.md`
@@ -302,17 +370,18 @@ The recommender runs a dialog (direction → options → confirmation), then pro
 
 ## Step 15 — Package for delivery
 
+**POWERSHELL — copy-paste as-is (uses `$project` and `$component` from Step 0):**
+
 ```powershell
-$component = "MY_PROGRAM"
-$delivery = "$project\$component`_Documentation_$(Get-Date -Format yyyy-MM-dd).zip"
+$delivery = "$project\${component}_Documentation_$(Get-Date -Format yyyy-MM-dd).zip"
 $staging = "$env:TEMP\cidra_delivery_$(Get-Random)"
 
 New-Item -ItemType Directory -Path "$staging\$component" -Force | Out-Null
 Copy-Item "$project\Screens\$component\*" -Destination "$staging\$component\" -Recurse
 
-# Optional: include the brainstormer artifacts as context
+# Optional: include brainstormer artifacts as context
 Copy-Item "$project\BRAINSTORM_OUTPUT.yaml" -Destination "$staging\$component\" -ErrorAction SilentlyContinue
-Copy-Item "$project\MISSING_INPUTS.md" -Destination "$staging\$component\" -ErrorAction SilentlyContinue
+Copy-Item "$project\MISSING_INPUTS.md"     -Destination "$staging\$component\" -ErrorAction SilentlyContinue
 
 Compress-Archive -Path "$staging\$component" -DestinationPath $delivery -CompressionLevel Optimal
 Remove-Item $staging -Recurse -Force
@@ -326,16 +395,19 @@ Optionally write a Hebrew/English cover letter alongside — see the Maccabi RK1
 ## Quick reference — full happy path
 
 ```
-Step 1 (once): git clone the framework
-Step 2-3: create project + add source
-Step 4: install.ps1 -ProjectPath <project>
-Step 5: register slash commands
-Step 6: open in Cursor
-Step 7: /brainstorm                  → 3 files at root, customer acknowledges gaps
-Step 8: preprocess source if needed
-Step 9: /chunk:analyze, then /chunk  → CHUNKS/
+Prereqs (once per machine):  winget install Git + Cursor (+ Node + Python if optional features)
+Step 0  (once per project):  set $projectName + $component, run the variables block
+Step 1  (once per machine):  git clone the framework
+Step 2:  New-Item $project + Source Code/
+Step 3:  Copy source + reference docs
+Step 4:  .\Scripts\install.ps1 -ProjectPath $project
+Step 5:  Copy-Item Protocols\.claude\commands → $project\.claude\
+Step 6:  cursor $project
+Step 7:  /brainstorm                  → 3 files at root, customer acknowledges gaps
+Step 8:  preprocess source if needed
+Step 9:  /chunk:analyze, then /chunk  → CHUNKS/
 Step 10: /document:setup             → DOCUMENTER_PROJECT_CONFIG.yaml
-Step 11: /document <COMPONENT>       → Screens/<COMPONENT>/
+Step 11: /document $component         → Screens/<COMPONENT>/
 Step 12: /document:validate          → 100/100 target
 Step 13: /brainstorm:gap             → refreshed MISSING_INPUTS.md
 Step 14 (opt): /recommend            → RECOMMENDATIONS/
