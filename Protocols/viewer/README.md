@@ -145,35 +145,113 @@ users can use `Out-File -Encoding utf8NoBOM`.
 
 ## CDN dependencies
 
-All loaded over `https://` from jsDelivr. The file works offline ONLY if
-these have been cached by the browser at least once, OR if you vendor
-the files locally (see "Offline / corporate firewall" below).
+All loaded over `https://` from jsDelivr with **Subresource Integrity
+(SRI) hashes** pinned in the `integrity` attribute. SRI failures are
+caught by both per-script `onerror` handlers and a global capture-phase
+`error` listener installed before the `<script defer>` chain runs.
 
-| Library | Version | Purpose |
-|---------|---------|---------|
-| `marked` | 5.1.2 | Markdown parser. **Pinned** to v5 because the positional renderer API used here was replaced with a token-object API in v6+. |
-| `dompurify` | 3.0.11 | HTML sanitizer. Configured with `ALLOWED_URI_REGEXP` for data: SVGs. |
-| `highlight.js` | 11.9.0 | Syntax highlighting (browser bundle). |
-| `highlightjs-cobol` | 0.3.1 | COBOL grammar. |
-| RPG, CL, DDS, ABAP | inline | Minimal grammars registered in the viewer script (no external CDN). |
+| Library | Version | SRI shape | Purpose | Failure mode |
+|---------|---------|-----------|---------|--------------|
+| `marked` | 5.1.2 | sha384 | Markdown parser. **Pinned** to v5 because the positional renderer API used here was replaced with a token-object API in v6+. | **Floor**: without this, the viewer shows an empty-state banner — UI still works. |
+| `dompurify` | 3.0.11 | sha384 | HTML sanitizer. Configured with `ALLOWED_URI_REGEXP` plus an `afterSanitizeAttributes` hook that strips `javascript:` / `data:` from links and iframes. | **Security floor**: missing → rendering is refused unless the user opts in per-file via a banner action. |
+| `highlight.js` (core) | 11.9.0 | sha384 | Syntax highlighting (browser bundle, loaded from `@highlightjs/cdn-assets`). | Missing → markdown renders, code blocks become plain `<pre><code>`. Warning banner shown. |
+| `highlight.js` grammars: c, cpp, sql, javascript, python, yaml, json, xml | 11.9.0 | sha384 | Per-language tokenizers. | Missing → that language degrades to plaintext silently; aggregate warning banner lists which languages failed. |
+| `highlightjs-cobol` | 0.3.1 | sha384 | COBOL grammar. | Same as other grammars. |
+| RPG, CL, DDS, ABAP | inline | n/a | Minimal stub grammars registered in the viewer script (no external CDN). | Registered only after hljs core loads. |
 
-If a CDN load fails, the page shows an error message naming the missing
-dependency. There is no silent fallback to plaintext.
+### Progressive degradation matrix
+
+| Scenario | UI controls work? | Markdown renders? | Syntax colored? | Notes |
+|----------|-------------------|-------------------|-----------------|-------|
+| All deps load | yes | yes | yes | Happy path, no banners. |
+| `highlight.js` blocked | yes | yes | no | Warning banner: "Syntax highlighter unavailable". |
+| One grammar blocked (e.g. cobol) | yes | yes | partial | Aggregate "Some syntax grammars unavailable" banner. |
+| `DOMPurify` blocked | yes | refused by default | n/a | Error banner with **Render anyway (unsafe)** action, scoped to the currently-loaded file. |
+| `marked` blocked | yes | no | no | Error banner with link to README; UI buttons still respond. |
+| **All CDN blocked** | yes | no (until vendor) | no | Banners chained: info "Trying ./vendor/..." → final status. Toolbar remains clickable. |
+
+If a CDN script does load but executes incorrectly (proxy injection,
+SRI mismatch, or a tampered grammar that parse-fails), the global
+capture-phase `error` listener flips the failure registry for that
+`data-dep` even when the inline `onerror` attribute does not fire.
 
 ---
 
-## Offline / corporate firewall
+## Offline / corporate firewall (vendoring)
 
-To run the viewer behind a network that blocks jsDelivr (common in
-enterprise environments):
+When jsDelivr is blocked by firewall, browser privacy settings, or
+Brave/Firefox ETP shields, the viewer auto-detects the failure and
+attempts a local `./vendor/` fallback. The banner sequence is:
 
-1. Download each CDN URL listed above to a `vendor/` folder next to
-   `viewer.html`.
-2. Edit `viewer.html`: replace `https://cdn.jsdelivr.net/...` URLs with
-   relative paths like `vendor/marked@5.1.2.min.js`.
-3. Open the page — it will load the vendored copies.
+1. **Info banner**: "Some libraries failed to load from CDN. Trying
+   local `./vendor/` copies..." (or "Browser privacy settings or
+   extensions may be blocking cdn.jsdelivr.net..." when the script
+   load was silent).
+2. The viewer attempts to inject `<script src="./vendor/marked.min.js">`,
+   `<script src="./vendor/purify.min.js">`, `<script src="./vendor/highlight.min.js">`
+   in parallel for any missing library.
+3. **Final banner**: success (banners clear) OR error/warning per
+   library that is still missing.
 
-A future revision may include an automated vendor script.
+### Vendoring procedure
+
+Create a `vendor/` folder next to `viewer.html` and drop these
+**three files** (file names are load-bearing — the viewer expects
+exactly these names):
+
+| Save as | Download from |
+|---------|---------------|
+| `vendor/marked.min.js`     | `https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js` |
+| `vendor/purify.min.js`     | `https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js` |
+| `vendor/highlight.min.js`  | `https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js` |
+
+PowerShell one-liner (the default shell on Windows per CLAUDE.md):
+
+```powershell
+$ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force -Path vendor | Out-Null
+$dl = @{
+  'marked.min.js'    = 'https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js'
+  'purify.min.js'    = 'https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js'
+  'highlight.min.js' = 'https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js'
+}
+foreach ($k in $dl.Keys) {
+  Invoke-WebRequest -Uri $dl[$k] -OutFile (Join-Path 'vendor' $k)
+}
+```
+
+Bash equivalent (Git Bash / WSL):
+
+```bash
+mkdir -p vendor
+curl -L -o vendor/marked.min.js    https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js
+curl -L -o vendor/purify.min.js    https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js
+curl -L -o vendor/highlight.min.js https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js
+```
+
+You do **not** need to vendor the per-language hljs grammars or the
+highlight.js CSS themes — they degrade silently to plaintext + UA
+default styles. Vendor them only if you frequently view code in those
+languages and want the colored output offline.
+
+### Security note on vendor files
+
+The `./vendor/` fallback path loads scripts **without SRI hashes**
+because the operator may choose a different upstream mirror. This is a
+deliberate trade-off: SRI on the CDN path protects against the
+common-case (live network MITM), and the vendor path is only reached
+when the CDN path failed, at which point you are choosing to trust the
+local file you placed in `./vendor/`. Treat that folder as a
+write-controlled location — anyone who can write to it can change what
+the viewer renders.
+
+### Watchdog timeout
+
+If the deferred CDN scripts stall (slow network, captive portal, TCP
+hang) the viewer's boot watchdog fires at 8 seconds, marks any
+not-yet-loaded scripts as failed, and proceeds to the vendor fallback
+path. The toolbar buttons are wired before this timer fires — they
+always work.
 
 ---
 
@@ -220,6 +298,7 @@ documentation. Wire-in points:
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.2.0 | 2026-05-31 | Resilience redesign: SRI hashes on every CDN URL, defer + capture-phase error listener, per-library failure registry, `./vendor/` fallback for `marked` / `dompurify` / `highlight.js`, structured Banner DOM (no innerHTML), per-file `Render anyway` opt-in (scoped to current file, cleared on every load), 8s boot watchdog, CSP meta tag, DOMPurify `afterSanitizeAttributes` hook stripping `javascript:`/`data:` on `<a href>` and `<iframe src>`, footer `dir="ltr"` (UAX#9 N1 trailing-period fix), toolbar `dir="ltr" lang="en"`, banner host `dir="ltr"` + sticky, bilingual banner messages (en + he), title `lang="en" dir="ltr"`. |
 | 1.1.0 | 2026-05-31 | Critical+high adversarial fixes folded in: pinned marked to v5 (positional API), browser-bundle highlight.js, valid stub grammars, autolink disabled, BOM detection, front-matter parsing, blockquote dir fix, ul/ol re-declaration, DOMPurify v3 `ALLOWED_URI_REGEXP`, structural tablecell detection, Hebrew mono fallbacks, inline-style empty state removed. |
 | 1.0.0 | 2026-05-30 | Initial viewer aligned with MRP v1.0. |
 

@@ -3,7 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CIDRA Documentation Viewer</title>
+<!-- =========================================================================
+     Content-Security-Policy (defense-in-depth alongside DOMPurify)
+     - script-src allows jsdelivr CDN + self (./vendor/ fallback) + the
+       inline boot script. 'unsafe-inline' is required because the
+       failure-registry bootstrap and per-script onerror handlers are
+       inline. Future hardening: move to external bootstrap.js and drop
+       'unsafe-inline' from script-src.
+     - style-src allows inline styles (the file ships its own <style>),
+       jsdelivr (hljs themes), and self.
+     - img-src allows data: for embedded Mermaid SVGs.
+     - connect-src 'none' — nothing on this page should fetch().
+     - object-src, frame-src 'none' — no plugins, no iframes.
+     ========================================================================= -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self';">
+<title lang="en" dir="ltr">CIDRA Documentation Viewer</title>
 
 <!-- =========================================================================
      CIDRA Documentation Viewer
@@ -36,14 +51,48 @@
        - Startup self-test: marked.parse('`x`') asserts <bdi><code>x</code></bdi>
      ========================================================================= -->
 
-<!-- highlight.js theme — light + dark, swapped by data-theme on <html>.
-     Pinned to 11.9.0 with SRI integrity. -->
+<!-- =========================================================================
+     Dependency failure registry — populated by every onerror handler on
+     <link> / <script> below. The boot script (at the bottom of <body>)
+     reads this to decide whether to attempt ./vendor/ fallback for each
+     library. Must be the first script executed.
+     =========================================================================
+     Also installs a global error listener BEFORE the deferred scripts
+     run. SRI mismatches and parse errors from tampered/proxy-served
+     scripts produce a SecurityError or SyntaxError that does NOT fire
+     <script onerror> in all browsers; the global listener catches them
+     by matching the offending src to data-dep on the failing element.
+     ========================================================================= -->
+<script>
+  window.__cidraDepFail = Object.create(null);
+  window.__cidraDepLoaded = Object.create(null);
+  window.addEventListener('error', function (ev) {
+    // Script load / parse failures bubble up here even when the inline
+    // onerror attribute did not fire (SRI mismatch, MIME-type rejection,
+    // proxy-injected content with a parse error).
+    var t = ev && ev.target;
+    if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK') && t.dataset && t.dataset.dep) {
+      window.__cidraDepFail[t.dataset.dep] = true;
+    }
+  }, /* useCapture */ true);
+</script>
+
+<!-- highlight.js theme — light + dark, controlled by data-theme on <html>.
+     Both ship with SRI integrity. The dark theme starts disabled; the
+     theme toggle flips `disabled` rather than re-fetching, so the dark
+     CSS is fetched at startup and stays cached. -->
 <link id="hljs-light" rel="stylesheet"
+      data-dep="hljs-theme-light"
       href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css"
-      crossorigin="anonymous">
+      integrity="sha384-eFTL69TLRZTkNfYZOLM+G04821K1qZao/4QLJbet1pP4tcF+fdXq/9CdqAbWRl/L"
+      crossorigin="anonymous"
+      onerror="window.__cidraDepFail['hljs-theme-light']=true;">
 <link id="hljs-dark"  rel="stylesheet" disabled
+      data-dep="hljs-theme-dark"
       href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css"
-      crossorigin="anonymous">
+      integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
+      crossorigin="anonymous"
+      onerror="window.__cidraDepFail['hljs-theme-dark']=true;">
 
 <style>
 /* ---------------------------------------------------------------------------
@@ -375,6 +424,82 @@ body.drag-over {
 }
 
 /* ---------------------------------------------------------------------------
+   11. BANNER SYSTEM — non-blocking status messages above the viewer.
+   The host (#banners) is dir="ltr" lang="en" in markup because all
+   current banner copy is English; mixed-language banners are isolated
+   per-banner via <bdi> in the structured Banner DOM builder (no
+   innerHTML — see Banner.add in the boot script).
+   Sticky so error banners stay visible during scroll.
+   --------------------------------------------------------------------------- */
+#banners {
+  position: sticky;
+  top: 48px;            /* below the sticky toolbar */
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 24px;
+  max-width: 900px;
+  margin-inline: auto;
+  unicode-bidi: isolate;
+}
+#banners:empty { display: none; }
+.banner {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+.banner .banner-msg { flex: 1; }
+.banner .banner-msg bdi { unicode-bidi: isolate; }
+.banner .banner-action {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--sans);
+}
+.banner .banner-action:hover { border-color: var(--accent); }
+.banner .banner-close {
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  padding: 0 4px;
+  margin-inline-start: auto;
+}
+.banner .banner-close:hover { opacity: 1; }
+.banner.info    { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.banner.warning { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+.banner.error   { background: #fef2f2; border-color: #fca5a5; color: #7f1d1d; }
+html[data-theme="dark"] .banner.info    { background: #1e293b; border-color: #1e40af; color: #bfdbfe; }
+html[data-theme="dark"] .banner.warning { background: #292524; border-color: #92400e; color: #fcd34d; }
+html[data-theme="dark"] .banner.error   { background: #1c1917; border-color: #991b1b; color: #fca5a5; }
+
+/* ---------------------------------------------------------------------------
+   12. BIDI SAFETY for chrome (footer, toolbar). Banners use `isolate`
+   above with explicit dir="ltr" on the host so flex-row order is
+   deterministic for English copy. The footer uses dir="ltr" in markup
+   — `unicode-bidi: isolate` here respects that explicit direction
+   without re-deriving from content (NOT `plaintext`, which would flip
+   if Hebrew content is ever added).
+   --------------------------------------------------------------------------- */
+footer { unicode-bidi: isolate; }
+
+/* ---------------------------------------------------------------------------
    PERMANENT ANTI-PATTERN GUARD
    DO NOT add a global * { direction: ltr !important } "fix" — it
    destroys Hebrew rendering globally. See protocol css_pattern_library
@@ -385,10 +510,14 @@ body.drag-over {
 
 <body>
 
-<div class="toolbar">
+<!-- Toolbar is dir="ltr" lang="en" because all controls are English-
+     labelled. Button source order matches the user's intended visual
+     order: Open → Dir → Theme → Mirror → Clear. Document body remains
+     dir="rtl" lang="he" — only the chrome is LTR-en. -->
+<div class="toolbar" dir="ltr" lang="en">
   <div class="title">
-    <span>CIDRA Documentation Viewer</span>
-    <span class="badge">B+CIDRA</span>
+    <span lang="en" dir="ltr">CIDRA Documentation Viewer</span>
+    <span class="badge" lang="en">B+CIDRA</span>
   </div>
 
   <label class="file-picker">
@@ -404,6 +533,13 @@ body.drag-over {
   <span id="fileInfo" class="file-info"></span>
   <span id="encodingWarn" class="warn" hidden></span>
 </div>
+
+<!-- Banner host — sits between toolbar and content. dir="ltr" lang="en"
+     because all current banner copy is English; per-banner direction
+     can be overridden via Banner.add({lang}) when localization lands.
+     role=status / aria-live=polite so status changes are announced
+     without stealing focus; error banners override to role=alert. -->
+<div id="banners" role="status" aria-live="polite" dir="ltr" lang="en"></div>
 
 <div class="content">
   <div id="output" class="md">
@@ -422,63 +558,241 @@ body.drag-over {
 </div>
 
 <!-- =========================================================================
-     CDN dependencies — every URL pinned to an exact version.
-     marked@5.1.2 retains the positional renderer API. v6+ introduced
-     token-object signatures that would break every override below.
-     highlight.js@11.9.0 — browser bundle (highlight.min.js, NOT
-     lib/index.min.js which is ESM-only).
-     DOMPurify@3.0.11 — uses ALLOWED_URI_REGEXP for data: SVGs.
-     highlightjs-cobol@0.3.1 — pinned version.
-     For SAP ABAP, we register a minimal grammar inline (no /gh/ HEAD).
+     RUNTIME DEPENDENCIES
+     - All pinned to exact semver; no @latest, no /gh/, no HEAD
+     - defer => execute in document order after parsing
+     - integrity (SHA-384) + crossorigin="anonymous" => SRI verification
+     - onerror => record failure in window.__cidraDepFail registry
+     - data-dep => identifier used by the registry + by the global
+       error listener (installed in <head>) to map script load /
+       parse / SRI failures back to a library name.
+     - Per-language grammars degrade silently (existing try/catch in
+       renderer.code falls back to escapeHtml on missing grammar).
+     - LOAD ORDER IS LOAD-BEARING: the inline boot <script defer> at
+       the bottom of <body> MUST execute after every dep script. Do
+       not reorder.
      ========================================================================= -->
-<script src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/c.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/cpp.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/yaml.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlightjs-cobol@0.3.1/dist/cobol.min.js"
-        crossorigin="anonymous"></script>
 
-<script>
+<!-- MANDATORY (rendering floor) -->
+<script defer data-dep="marked"
+  src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js"
+  integrity="sha384-tP9zQHkeb4OfJ9PanaUpV7hxoPxP8KY4mYVYu+FK51pzcM3/idOlmVlA4kPO2SL2"
+  crossorigin="anonymous"
+  onload="window.__cidraDepLoaded.marked=true;"
+  onerror="window.__cidraDepFail.marked=true;"></script>
+
+<!-- SECURITY (refuse to render untrusted content if missing — see boot script) -->
+<script defer data-dep="dompurify"
+  src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"
+  integrity="sha384-Ic7KEGROu37YaruU6NyiYeib7UhjFyDZQ5fzBAji965L75T/4LGk5nzwMEjNGexs"
+  crossorigin="anonymous"
+  onload="window.__cidraDepLoaded.dompurify=true;"
+  onerror="window.__cidraDepFail.dompurify=true;"></script>
+
+<!-- OPTIONAL (degrade to plain <pre><code> if missing) -->
+<script defer data-dep="hljs"
+  src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js"
+  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp"
+  crossorigin="anonymous"
+  onload="window.__cidraDepLoaded.hljs=true;"
+  onerror="window.__cidraDepFail.hljs=true;"></script>
+
+<!-- OPTIONAL grammars — silently degrade to plaintext if missing. -->
+<script defer data-dep="hljs-c"          src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/c.min.js"          integrity="sha384-mWenE7UXKnmYRcJ3mh+Os3iZ43BmFf9x3AZMM6gi/2sT6vxouPWspbTdREwWDO3w" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-c']=true;"          onerror="window.__cidraDepFail['hljs-c']=true;"></script>
+<script defer data-dep="hljs-cpp"        src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/cpp.min.js"        integrity="sha384-pF0kkJHJ7iLK/GTjymCseh94/WcMBVV6C9lKk2HdA+dut+ACEizCpQbrzWE4fpfv" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-cpp']=true;"        onerror="window.__cidraDepFail['hljs-cpp']=true;"></script>
+<script defer data-dep="hljs-sql"        src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/sql.min.js"        integrity="sha384-8q00eP+tyV9451aJYD5ML3ftuHKsGnDcezp7EXMEclDg1fZVSoj8O+3VyJTkXmWp" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-sql']=true;"        onerror="window.__cidraDepFail['hljs-sql']=true;"></script>
+<script defer data-dep="hljs-javascript" src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/javascript.min.js" integrity="sha384-44q2s9jxk8W5N9gAB0yn7UYLi9E2oVw8eHyaTZLkDS3WuZM/AttkAiVj6JoZuGS4" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-javascript']=true;" onerror="window.__cidraDepFail['hljs-javascript']=true;"></script>
+<script defer data-dep="hljs-python"     src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/python.min.js"     integrity="sha384-FWJTgPmIGm1+zpNhubuHRC/ulS1UK7hAZ7qiUUmKD8yGfPcn5ZXYBd2qRgi6L8Tu" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-python']=true;"     onerror="window.__cidraDepFail['hljs-python']=true;"></script>
+<script defer data-dep="hljs-yaml"       src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/yaml.min.js"       integrity="sha384-7YspHobypEnqY8ZOz2b0dwjM3LBhK18ogJfebE+C5BoXfIOO46DczczxY9GHUK0k" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-yaml']=true;"       onerror="window.__cidraDepFail['hljs-yaml']=true;"></script>
+<script defer data-dep="hljs-json"       src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/json.min.js"       integrity="sha384-RbRhXcXx5VHUdUaC5R0oV+XBXA5GhkaVCUzK8xN19K3FmtWSHyGVgulK92XnhBsI" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-json']=true;"       onerror="window.__cidraDepFail['hljs-json']=true;"></script>
+<script defer data-dep="hljs-xml"        src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/xml.min.js"        integrity="sha384-jgkY4GMNWfQcLLIoP1vg3FWXflDrRhcSXGBW6ONIWC2SOIv5H1Pa57sXs+aomCuZ" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-xml']=true;"        onerror="window.__cidraDepFail['hljs-xml']=true;"></script>
+<script defer data-dep="hljs-cobol"      src="https://cdn.jsdelivr.net/npm/highlightjs-cobol@0.3.1/dist/cobol.min.js"                  integrity="sha384-IoavtzDKwguqHFi4rsxIt3BKoXKrua1JoUtkgFH4sMWba0tKsWL0luir9Gm0/vLi" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-cobol']=true;"      onerror="window.__cidraDepFail['hljs-cobol']=true;"></script>
+
+<script defer>
 (function() {
   'use strict';
 
   // ===========================================================================
-  // 0. STARTUP SANITY CHECKS — fail loud, not silent.
+  // 0. DEPENDENCY-AWARE BOOT
+  // Per redesign:
+  //   - UI controls work even if every CDN fails (wireUI runs unconditionally).
+  //   - Markdown renders as long as marked.js loaded (from CDN or ./vendor/).
+  //   - Missing optional deps degrade with a banner, never block.
+  //   - DOMPurify failure refuses to render untrusted markdown by default,
+  //     but the UI stays alive and the user can opt in per-file.
+  //   - Per-language hljs failures are silent (existing try/catch in
+  //     renderer.code handles).
   // ===========================================================================
-  const missing = [];
-  if (typeof marked === 'undefined') missing.push('marked');
-  if (typeof DOMPurify === 'undefined') missing.push('DOMPurify');
-  if (typeof hljs === 'undefined') missing.push('highlight.js');
-  if (missing.length) {
-    document.getElementById('output').innerHTML =
-      '<div class="empty"><p lang="en">Failed to load CDN dependencies: ' +
-      missing.join(', ') +
-      '. Check network or vendor the files locally.</p></div>';
-    return;
+
+  // ---------------------------------------------------------------------------
+  // Feature-detection probes (more reliable than typeof against tampered globals).
+  // ---------------------------------------------------------------------------
+  const Deps = {
+    // marked is exposed as a plain object with a .parse method.
+    marked:    function () { return !!window.marked    && typeof window.marked.parse    === 'function'; },
+    // DOMPurify is exposed as a callable (typeof === 'function') with sanitize.
+    dompurify: function () { return !!window.DOMPurify && typeof window.DOMPurify.sanitize === 'function'; },
+    // hljs is an object with .highlight + .registerLanguage.
+    hljs:      function () { return !!window.hljs      && typeof window.hljs.highlight    === 'function'; },
+    hasGrammar: function (lang) {
+      if (!this.hljs()) return false;
+      try { return !!window.hljs.getLanguage(lang); } catch (_) { return false; }
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Per-session state.
+  // ---------------------------------------------------------------------------
+  const State = {
+    lastRawMd: null,
+    lastFileName: null,
+    // Per-file opt-in to unsanitized rendering. Set to the file name; cleared
+    // in loadFile() before reading a new file and in btnClear handler.
+    allowUnsanitizedFor: null
+  };
+
+  // ---------------------------------------------------------------------------
+  // Banner system — structured DOM, no innerHTML. Caller passes a list of
+  // {text} / {code} / {link} segments; we build text nodes and elements.
+  // Dedupe by key so repeated render attempts don't spam.
+  // ---------------------------------------------------------------------------
+  const Banner = (function () {
+    function host() { return document.getElementById('banners'); }
+
+    function buildMessage(span, segments) {
+      segments.forEach(function (seg) {
+        if (typeof seg === 'string') {
+          span.appendChild(document.createTextNode(seg));
+        } else if (seg && seg.text != null) {
+          span.appendChild(document.createTextNode(String(seg.text)));
+        } else if (seg && seg.code != null) {
+          const bdi = document.createElement('bdi');
+          const code = document.createElement('code');
+          code.textContent = String(seg.code);
+          bdi.appendChild(code);
+          span.appendChild(bdi);
+        } else if (seg && seg.link != null) {
+          // Reject anything that is not http(s), mailto, or a relative path.
+          const href = String(seg.link.href || '');
+          if (/^(https?:|mailto:|\.\.?\/|\/)/.test(href)) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.textContent = String(seg.link.text || href);
+            a.rel = 'noopener noreferrer';
+            a.target = '_blank';
+            span.appendChild(a);
+          } else {
+            span.appendChild(document.createTextNode(String(seg.link.text || href)));
+          }
+        } else if (seg && seg.bilingual) {
+          // {bilingual: {en, he}} — emit both with explicit lang+dir.
+          if (seg.bilingual.en) {
+            const en = document.createElement('span');
+            en.lang = 'en'; en.dir = 'ltr';
+            en.textContent = String(seg.bilingual.en);
+            span.appendChild(en);
+          }
+          if (seg.bilingual.he) {
+            if (seg.bilingual.en) span.appendChild(document.createTextNode(' — '));
+            const he = document.createElement('span');
+            he.lang = 'he'; he.dir = 'rtl';
+            he.textContent = String(seg.bilingual.he);
+            span.appendChild(he);
+          }
+        }
+      });
+    }
+
+    function add(level, key, segments, actions) {
+      const h = host();
+      if (!h) return null;
+      if (key) {
+        const existing = h.querySelector('[data-banner-key="' + CSS.escape(key) + '"]');
+        if (existing) return existing;
+      }
+      const el = document.createElement('div');
+      el.className = 'banner ' + level;
+      el.setAttribute('role', level === 'error' ? 'alert' : 'status');
+      el.lang = 'en';
+      el.dir = 'ltr';
+      if (key) el.setAttribute('data-banner-key', key);
+
+      const msg = document.createElement('span');
+      msg.className = 'banner-msg';
+      buildMessage(msg, Array.isArray(segments) ? segments : [segments]);
+      el.appendChild(msg);
+
+      if (actions && actions.length) {
+        actions.forEach(function (a) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'banner-action';
+          b.lang = 'en';
+          b.textContent = String(a.label);
+          b.addEventListener('click', a.onClick);
+          el.appendChild(b);
+        });
+      }
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'banner-close';
+      close.setAttribute('aria-label', 'Dismiss');
+      close.lang = 'en';
+      close.textContent = '×';
+      close.addEventListener('click', function () { el.remove(); });
+      el.appendChild(close);
+
+      h.appendChild(el);
+      return el;
+    }
+    function clearKey(key) {
+      const h = host(); if (!h) return;
+      const el = h.querySelector('[data-banner-key="' + CSS.escape(key) + '"]');
+      if (el) el.remove();
+    }
+    return {
+      info:    function (key, segs, actions) { return add('info',    key, segs, actions); },
+      warning: function (key, segs, actions) { return add('warning', key, segs, actions); },
+      error:   function (key, segs, actions) { return add('error',   key, segs, actions); },
+      clear:   clearKey
+    };
+  })();
+
+  // ---------------------------------------------------------------------------
+  // loadScript — used for ./vendor/ fallback. Each entry in VENDOR carries
+  // its own integrity hash (computed at vendoring time — see README). If
+  // a hash is missing we still attempt the load but mark a warning so the
+  // operator knows defense-in-depth is incomplete.
+  // ---------------------------------------------------------------------------
+  // NOTE: integrity hashes for vendor files must be computed once the
+  // operator has dropped the actual bytes into ./vendor/. We DO NOT ship
+  // hard-coded vendor hashes because the operator may use a different
+  // upstream mirror — see README.md "Offline / corporate firewall".
+  function loadScript(src, integrity) {
+    return new Promise(function (resolve, reject) {
+      const s = document.createElement('script');
+      s.src = src;
+      s.crossOrigin = 'anonymous';
+      if (integrity) s.integrity = integrity;
+      s.onload = function () { resolve(src); };
+      s.onerror = function () { reject(new Error('Failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function attemptVendorFallback() {
+    const tasks = [];
+    if (!Deps.marked())    tasks.push(loadScript('./vendor/marked.min.js').catch(function(){}));
+    if (!Deps.dompurify()) tasks.push(loadScript('./vendor/purify.min.js').catch(function(){}));
+    if (!Deps.hljs())      tasks.push(loadScript('./vendor/highlight.min.js').catch(function(){}));
+    return Promise.all(tasks);
   }
 
   // ===========================================================================
-  // 1. REGISTER STUB GRAMMARS for legacy AS/400 languages
+  // 1. REGISTER STUB GRAMMARS for legacy AS/400 languages — guarded.
+  // Called by configureRenderer() only when hljs is available.
   // Minimal but VALID hljs grammar objects (keywords + comment + string).
-  // Without `keywords` and valid `contains`, hljs throws on first highlight.
   // ===========================================================================
   function makeStubGrammar(name, aliases, keywordList) {
     return function(hl) {
@@ -497,34 +811,37 @@ body.drag-over {
       };
     };
   }
-  try {
-    hljs.registerLanguage('rpg',
-      makeStubGrammar('RPG', ['rpg', 'rpgle', 'sqlrpgle'],
-        'BEGSR ENDSR EVAL IF ELSE ENDIF DO ENDDO SELECT WHEN OTHER ENDSL ' +
-        'EXSR LEAVE ITER CHAIN READ WRITE UPDATE DELETE READE SETLL SETGT ' +
-        'MOVE MOVEL MOVEA CLEAR RESET CALLP DOU DOW FOR ENDFOR RETURN ' +
-        'DCL-S DCL-DS DCL-PR DCL-PI DCL-PROC END-PROC END-DS END-PR END-PI'));
-    hljs.registerLanguage('cl',
-      makeStubGrammar('CL', ['cl', 'clp', 'clle'],
-        'PGM ENDPGM DCL DCLF CHGVAR IF ELSE ENDDO DO MONMSG GOTO RETURN ' +
-        'CALL CALLPRC SBMJOB SNDPGMMSG RCVMSG OVRDBF DLTOVR RTVDTAARA ' +
-        'CHGDTAARA CRTDTAARA DLTDTAARA WRKACTJOB WRKSPLF'));
-    hljs.registerLanguage('dds',
-      makeStubGrammar('DDS', ['dds'],
-        'R DSPSIZ DSPMOD CA01 CA02 CA03 CA04 CA05 CA06 CA07 CA08 CA09 ' +
-        'CA10 CA11 CA12 SFL SFLCTL SFLDSP SFLDSPCTL SFLEND SFLCLR SFLRCDNBR ' +
-        'OVERLAY ROLLDOWN ROLLUP DSPATR COLOR HLPID INDARA INDTXT TEXT'));
-    hljs.registerLanguage('abap',
-      makeStubGrammar('ABAP', ['abap', 'sapabap'],
-        'DATA TYPES BEGIN END OF STRUCTURE TABLE TYPE LIKE VALUE INITIAL ' +
-        'SELECT FROM WHERE INTO TABLE INNER OUTER JOIN ORDER BY GROUP BY ' +
-        'IF ELSEIF ELSE ENDIF CASE WHEN OTHERS ENDCASE DO ENDDO LOOP AT ' +
-        'ENDLOOP WHILE ENDWHILE FORM ENDFORM PERFORM USING CHANGING METHOD ' +
-        'ENDMETHOD CLASS ENDCLASS INTERFACE ENDINTERFACE FUNCTION ' +
-        'ENDFUNCTION READ APPEND INSERT MODIFY DELETE CALL FUNCTION ' +
-        'MESSAGE TYPE EXCEPTION RAISE TRY CATCH ENDTRY'));
-  } catch (err) {
-    console.warn('[CIDRA viewer] Stub grammar registration failed:', err);
+  function registerStubGrammars() {
+    if (!Deps.hljs()) return;
+    try {
+      window.hljs.registerLanguage('rpg',
+        makeStubGrammar('RPG', ['rpg', 'rpgle', 'sqlrpgle'],
+          'BEGSR ENDSR EVAL IF ELSE ENDIF DO ENDDO SELECT WHEN OTHER ENDSL ' +
+          'EXSR LEAVE ITER CHAIN READ WRITE UPDATE DELETE READE SETLL SETGT ' +
+          'MOVE MOVEL MOVEA CLEAR RESET CALLP DOU DOW FOR ENDFOR RETURN ' +
+          'DCL-S DCL-DS DCL-PR DCL-PI DCL-PROC END-PROC END-DS END-PR END-PI'));
+      window.hljs.registerLanguage('cl',
+        makeStubGrammar('CL', ['cl', 'clp', 'clle'],
+          'PGM ENDPGM DCL DCLF CHGVAR IF ELSE ENDDO DO MONMSG GOTO RETURN ' +
+          'CALL CALLPRC SBMJOB SNDPGMMSG RCVMSG OVRDBF DLTOVR RTVDTAARA ' +
+          'CHGDTAARA CRTDTAARA DLTDTAARA WRKACTJOB WRKSPLF'));
+      window.hljs.registerLanguage('dds',
+        makeStubGrammar('DDS', ['dds'],
+          'R DSPSIZ DSPMOD CA01 CA02 CA03 CA04 CA05 CA06 CA07 CA08 CA09 ' +
+          'CA10 CA11 CA12 SFL SFLCTL SFLDSP SFLDSPCTL SFLEND SFLCLR SFLRCDNBR ' +
+          'OVERLAY ROLLDOWN ROLLUP DSPATR COLOR HLPID INDARA INDTXT TEXT'));
+      window.hljs.registerLanguage('abap',
+        makeStubGrammar('ABAP', ['abap', 'sapabap'],
+          'DATA TYPES BEGIN END OF STRUCTURE TABLE TYPE LIKE VALUE INITIAL ' +
+          'SELECT FROM WHERE INTO TABLE INNER OUTER JOIN ORDER BY GROUP BY ' +
+          'IF ELSEIF ELSE ENDIF CASE WHEN OTHERS ENDCASE DO ENDDO LOOP AT ' +
+          'ENDLOOP WHILE ENDWHILE FORM ENDFORM PERFORM USING CHANGING METHOD ' +
+          'ENDMETHOD CLASS ENDCLASS INTERFACE ENDINTERFACE FUNCTION ' +
+          'ENDFUNCTION READ APPEND INSERT MODIFY DELETE CALL FUNCTION ' +
+          'MESSAGE TYPE EXCEPTION RAISE TRY CATCH ENDTRY'));
+    } catch (err) {
+      console.warn('[CIDRA viewer] Stub grammar registration failed:', err);
+    }
   }
 
   // ===========================================================================
@@ -532,32 +849,21 @@ body.drag-over {
   // marked v5 uses POSITIONAL renderer args: codespan(code), code(code, lang),
   // tablecell(content, flags), link(href, title, text), paragraph(text),
   // heading(text, level, raw), listitem(text), blockquote(quote).
-  // If a future marked version changes the signatures, our overrides emit
-  // [object Object] — this smoke test catches that at startup.
   // ===========================================================================
   function smokeTestMarked() {
+    if (!Deps.marked()) return false;
     try {
-      const renderer = new marked.Renderer();
-      const result = renderer.codespan('abc');
-      // marked v5: renderer.codespan returns <code>abc</code>
-      // If signature changed: renderer.codespan({text: 'abc'}) would
-      // produce something with [object Object] in the body.
+      const r = new window.marked.Renderer();
+      const result = r.codespan('abc');
       return /<code>abc<\/code>/.test(result);
     } catch (err) {
       console.error('[CIDRA viewer] Smoke test failed:', err);
       return false;
     }
   }
-  const markedApiOk = smokeTestMarked();
-  if (!markedApiOk) {
-    document.getElementById('encodingWarn').hidden = false;
-    document.getElementById('encodingWarn').textContent =
-      'marked API mismatch — renderer overrides may produce wrong output.';
-  }
 
   // ===========================================================================
-  // 3. RENDERER OVERRIDES
-  // marked v5 positional API. Each override returns HTML.
+  // 3. RENDERER OVERRIDES (shared helpers — usable without marked loaded)
   // ===========================================================================
   function escapeHtml(s) {
     return String(s)
@@ -573,11 +879,6 @@ body.drag-over {
   }
 
   // Wrap detected Hebrew runs inside hljs-comment spans in <bdi dir="rtl">.
-  // After hljs processes the code, we run a DOM pass on the resulting HTML
-  // string. The MRP_001 hebrew_comment_handling rule says: source columns
-  // win, but Hebrew comment glyphs should READ right-to-left within the
-  // line. Without this wrapper, the Hebrew comment glyphs inside an LTR
-  // hljs-comment span would render LTR (reversed character-by-character).
   function wrapHebrewInCommentSpans(html) {
     if (!/[א-ת]/.test(html)) return html;
     return html.replace(
@@ -588,79 +889,6 @@ body.drag-over {
     );
   }
 
-  const renderer = new marked.Renderer();
-
-  // INLINE CODE — wrap in <bdi> for trailing-punctuation isolation.
-  renderer.codespan = function(code) {
-    return '<bdi><code>' + code + '</code></bdi>';
-  };
-
-  // FENCED CODE — pre dir="ltr" + highlight.js + Hebrew comment wrapping.
-  // mirrorHebrewComments toggle controlled by toolbar button.
-  renderer.code = function(code, infostring, escaped) {
-    const lang = sanitizeLang((infostring || '').match(/\S*/)?.[0] || '');
-    let highlighted;
-    try {
-      if (lang === 'plaintext' || !hljs.getLanguage(lang)) {
-        highlighted = escapeHtml(code);
-      } else {
-        highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
-      }
-    } catch (err) {
-      highlighted = escapeHtml(code);
-    }
-    if (window.__cidraMirrorHE) {
-      highlighted = wrapHebrewInCommentSpans(highlighted);
-    }
-    return '<pre dir="ltr"><code class="hljs language-' + escapeHtml(lang) + '">' +
-           highlighted + '</code></pre>';
-  };
-
-  // LINK — wrap in <bdi> for trailing-punctuation safety in mixed paragraphs.
-  renderer.link = function(href, title, text) {
-    const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-    return '<bdi><a href="' + escapeHtml(href) + '"' + titleAttr +
-           ' target="_blank" rel="noopener noreferrer">' + text + '</a></bdi>';
-  };
-
-  // PARAGRAPH — dir="auto" so first-strong resolves direction.
-  renderer.paragraph = function(text) {
-    return '<p dir="auto">' + text + '</p>\n';
-  };
-
-  // HEADING — dir="auto" + slug id.
-  renderer.heading = function(text, level, raw) {
-    const slug = String(raw).toLowerCase().replace(/[^\wא-ת]+/g, '-').replace(/^-|-$/g, '');
-    return '<h' + level + ' id="' + escapeHtml(slug) + '" dir="auto">' +
-           text + '</h' + level + '>\n';
-  };
-
-  // LIST ITEM — dir="auto" per item so mixed-language lists work.
-  renderer.listitem = function(text, task, checked) {
-    return '<li dir="auto">' + text + '</li>\n';
-  };
-
-  // BLOCKQUOTE — NO dir="auto" on the outer block. Inner <p>s already
-  // carry dir="auto" from renderer.paragraph and will each resolve
-  // independently. Adding dir to the outer blockquote caused Safari
-  // <16.4 to ignore the inner <p>'s dir="auto" (known inheritance bug).
-  renderer.blockquote = function(quote) {
-    return '<blockquote>' + quote + '</blockquote>\n';
-  };
-
-  // LIST — open with dir="auto" so nested lists resolve correctly.
-  renderer.list = function(body, ordered, start) {
-    const tag = ordered ? 'ol' : 'ul';
-    const startAttr = (ordered && start !== 1) ? ' start="' + start + '"' : '';
-    return '<' + tag + ' dir="auto"' + startAttr + '>\n' + body + '</' + tag + '>\n';
-  };
-
-  // TABLE CELL — structural detection of code-only cells.
-  // We parse the cell HTML into a detached <td>, walk childNodes, and
-  // decide if the cell qualifies as code-only:
-  //   - no Hebrew or Arabic letters in textContent
-  //   - at least one <code> descendant
-  //   - non-code text is only whitespace or ASCII punctuation
   function isCodeOnly(html) {
     if (!html) return false;
     if (/[א-ת؀-ۿ]/.test(html)) return false;
@@ -673,54 +901,147 @@ body.drag-over {
     codes.forEach(function(c) { codeText += (c.textContent || ''); });
     const remainder = text.replace(/\s+/g, '');
     const codeTextStripped = codeText.replace(/\s+/g, '');
-    // Allow ASCII punctuation around code atoms.
     const nonCodeChars = remainder.replace(codeTextStripped, '');
     return /^[\s,.()\-–—:;?!\[\]{}]*$/.test(nonCodeChars);
   }
-  renderer.tablecell = function(content, flags) {
-    const tag = flags.header ? 'th' : 'td';
-    const align = flags.align ? ' style="text-align:' + flags.align + '"' : '';
-    const cls = isCodeOnly(content) ? ' class="code-only"' : '';
-    return '<' + tag + cls + align + '>' + content + '</' + tag + '>\n';
-  };
 
-  // ===========================================================================
-  // 4. MARKED OPTIONS — autolink disabled per protocol FP_005.
-  // URLs MUST be backticked by the documenter agent; bare URLs do not
-  // become autolinks.
-  // ===========================================================================
-  marked.setOptions({
-    renderer: renderer,
-    gfm: true,
-    breaks: false,
-    headerIds: false,
-    mangle: false,
-    smartLists: true,
-    pedantic: false
-  });
-  // Disable autolink extension if present (marked v5 has it under the
-  // gfm tokenizer; we override the url tokenizer to no-op).
-  try {
-    marked.use({
-      tokenizer: {
-        url: function() { return false; }
+  // ---------------------------------------------------------------------------
+  // 4. CONFIGURE MARKED + RENDERER — runs after marked loads (CDN or vendor).
+  // Returns true on success, false if marked is missing or smoke test failed.
+  // ---------------------------------------------------------------------------
+  let rendererConfigured = false;
+  function configureRenderer() {
+    if (rendererConfigured) return true;
+    if (!Deps.marked()) return false;
+    if (!smokeTestMarked()) {
+      Banner.error('marked-api',
+        [{bilingual: {
+          en: 'marked API mismatch — renderer overrides may produce wrong output.',
+          he: 'אי-התאמת ממשק marked — תצוגת המסמך עלולה להיפגע.'
+        }}]);
+      return false;
+    }
+    const renderer = new window.marked.Renderer();
+
+    renderer.codespan = function(code) {
+      return '<bdi><code>' + code + '</code></bdi>';
+    };
+
+    renderer.code = function(code, infostring, escaped) {
+      const lang = sanitizeLang((infostring || '').match(/\S*/)?.[0] || '');
+      let highlighted;
+      try {
+        if (lang === 'plaintext' || !Deps.hasGrammar(lang)) {
+          highlighted = escapeHtml(code);
+        } else {
+          highlighted = window.hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+        }
+      } catch (err) {
+        highlighted = escapeHtml(code);
       }
+      if (window.__cidraMirrorHE) {
+        highlighted = wrapHebrewInCommentSpans(highlighted);
+      }
+      return '<pre dir="ltr"><code class="hljs language-' + escapeHtml(lang) + '">' +
+             highlighted + '</code></pre>';
+    };
+
+    renderer.link = function(href, title, text) {
+      const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+      return '<bdi><a href="' + escapeHtml(href) + '"' + titleAttr +
+             ' target="_blank" rel="noopener noreferrer">' + text + '</a></bdi>';
+    };
+
+    renderer.paragraph = function(text) {
+      return '<p dir="auto">' + text + '</p>\n';
+    };
+
+    renderer.heading = function(text, level, raw) {
+      const slug = String(raw).toLowerCase().replace(/[^\wא-ת]+/g, '-').replace(/^-|-$/g, '');
+      return '<h' + level + ' id="' + escapeHtml(slug) + '" dir="auto">' +
+             text + '</h' + level + '>\n';
+    };
+
+    renderer.listitem = function(text, task, checked) {
+      return '<li dir="auto">' + text + '</li>\n';
+    };
+
+    renderer.blockquote = function(quote) {
+      return '<blockquote>' + quote + '</blockquote>\n';
+    };
+
+    renderer.list = function(body, ordered, start) {
+      const tag = ordered ? 'ol' : 'ul';
+      const startAttr = (ordered && start !== 1) ? ' start="' + start + '"' : '';
+      return '<' + tag + ' dir="auto"' + startAttr + '>\n' + body + '</' + tag + '>\n';
+    };
+
+    renderer.tablecell = function(content, flags) {
+      const tag = flags.header ? 'th' : 'td';
+      const align = flags.align ? ' style="text-align:' + flags.align + '"' : '';
+      const cls = isCodeOnly(content) ? ' class="code-only"' : '';
+      return '<' + tag + cls + align + '>' + content + '</' + tag + '>\n';
+    };
+
+    window.marked.setOptions({
+      renderer: renderer,
+      gfm: true,
+      breaks: false,
+      headerIds: false,
+      mangle: false,
+      smartLists: true,
+      pedantic: false
     });
-  } catch (_) { /* tokenizer extension API may vary; degrade gracefully */ }
+    try {
+      window.marked.use({
+        tokenizer: { url: function() { return false; } }
+      });
+    } catch (_) { /* tokenizer extension API may vary; degrade gracefully */ }
+
+    rendererConfigured = true;
+    return true;
+  }
 
   // ===========================================================================
   // 5. DOMPurify config
-  // v3 uses ALLOWED_URI_REGEXP (not the deprecated ADD_DATA_URI_TAGS) to
-  // permit data: URIs on <img> for Mermaid SVG embeds.
+  // ALLOWED_URI_REGEXP retains the v3 default minus the literal data:
+  // scheme on links to defuse [click](data:text/html,<script>...) XSS.
+  // data: is still allowed for inlined SVG images (img src) via the
+  // explicit FORBID/ALLOW shape below: we keep the regex permissive for
+  // images but then strip dangerous href/src in the afterSanitizeAttributes
+  // hook so links and iframes cannot use data:/javascript:.
   // ===========================================================================
   const purifyConfig = {
     ADD_TAGS: ['bdi'],
     ADD_ATTR: ['dir', 'class', 'id', 'title', 'lang', 'target', 'rel', 'start'],
-    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
+    FORBID_TAGS: ['style', 'iframe', 'object', 'embed', 'form', 'meta', 'base'],
+    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'srcdoc', 'formaction'],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
     USE_PROFILES: { html: true, svg: true, svgFilters: true }
   };
+  let purifyHookInstalled = false;
+  function installPurifyHook() {
+    if (purifyHookInstalled || !Deps.dompurify()) return;
+    // Defense-in-depth: strip javascript:/data: on <a href> and <iframe src>;
+    // allow data: only on <img>/<source> (SVG embeds).
+    window.DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+      if (!node.tagName) return;
+      const tag = node.tagName.toLowerCase();
+      if (node.hasAttribute && node.hasAttribute('href')) {
+        const h = (node.getAttribute('href') || '').trim();
+        if (/^(javascript|data|vbscript):/i.test(h)) node.removeAttribute('href');
+      }
+      if (node.hasAttribute && node.hasAttribute('src')) {
+        const s = (node.getAttribute('src') || '').trim();
+        if (/^(javascript|vbscript):/i.test(s)) node.removeAttribute('src');
+        if (/^data:/i.test(s) && tag !== 'img' && tag !== 'source') {
+          node.removeAttribute('src');
+        }
+      }
+    });
+    purifyHookInstalled = true;
+  }
 
   // ===========================================================================
   // 6. FRONT-MATTER PARSER
@@ -747,13 +1068,90 @@ body.drag-over {
   }
 
   // ===========================================================================
-  // 7. RENDER PIPELINE
+  // 7. RENDER PIPELINE — dependency-aware, never throws into the void.
+  // Floor #1: without marked we cannot render markdown at all.
+  // Floor #2: without DOMPurify we refuse by default and require a per-file
+  //           opt-in via the "Render anyway" banner action.
+  // hljs is best-effort; missing grammars degrade to escapeHtml.
   // ===========================================================================
-  function render(md) {
+  function setEmptyOutput(segments) {
+    const out = document.getElementById('output');
+    if (!out) return;
+    out.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    segments.forEach(function (s) {
+      const p = document.createElement('p');
+      if (s.lang) p.lang = s.lang;
+      if (s.dir)  p.dir  = s.dir;
+      p.className = 'empty-line';
+      p.textContent = s.text;
+      empty.appendChild(p);
+    });
+    out.appendChild(empty);
+  }
+
+  function render(md, fileName) {
+    State.lastRawMd = md;
+    if (fileName) State.lastFileName = fileName;
+    const out = document.getElementById('output');
+    if (!out) return;
+
+    // FLOOR #1 — marked.
+    if (!configureRenderer()) {
+      setEmptyOutput([
+        {lang: 'en', dir: 'ltr', text: 'Markdown parser unavailable. The viewer UI still works — restore network connectivity, or drop marked.min.js into ./vendor/ next to this file.'},
+        {lang: 'he', dir: 'rtl', text: 'מנתח Markdown אינו זמין. ממשק המשתמש עדיין פעיל — חבר את הרשת מחדש, או הצב את marked.min.js בתיקיית ./vendor/.'}
+      ]);
+      Banner.error('no-marked', [
+        {bilingual: {
+          en: 'Markdown parser (marked) failed to load from CDN and from ./vendor/.',
+          he: 'מנתח ה-Markdown (marked) לא נטען מה-CDN ולא מ-./vendor/.'
+        }},
+        ' ',
+        {link: {href: './README.md', text: 'README'}},
+        {text: '.'}
+      ]);
+      return;
+    }
+
+    // FLOOR #2 — DOMPurify (unless user opted in for THIS file).
+    const optedIn = State.allowUnsanitizedFor != null &&
+                    State.allowUnsanitizedFor === State.lastFileName;
+    if (!Deps.dompurify() && !optedIn) {
+      setEmptyOutput([
+        {lang: 'en', dir: 'ltr', text: 'Rendering blocked: HTML sanitizer (DOMPurify) is unavailable. The file has not been rendered to protect against malicious markup.'},
+        {lang: 'he', dir: 'rtl', text: 'התצוגה נחסמה: מסנן ה-HTML (DOMPurify) אינו זמין. הקובץ לא רונדר כדי להגן מפני קוד עוין.'}
+      ]);
+      const targetFile = State.lastFileName;
+      Banner.error('no-dompurify', [
+        {bilingual: {
+          en: 'HTML sanitizer (DOMPurify) failed to load. Markdown will not be rendered by default. Choose "Render anyway" only for files you fully trust.',
+          he: 'מסנן ה-HTML (DOMPurify) לא נטען. הצגת Markdown מושבתת כברירת מחדל. בחר "הצג בכל זאת" רק עבור קבצים שאתה סומך עליהם.'
+        }}
+      ], [{
+        label: 'Render anyway (unsafe)',
+        onClick: function () {
+          State.allowUnsanitizedFor = targetFile;
+          Banner.clear('no-dompurify');
+          // Re-banner every render so users do not habituate.
+          Banner.warning('unsanitized-mode', [
+            {bilingual: {
+              en: 'Rendering ' + (targetFile || '(file)') + ' without sanitization. This permission is scoped to this file only.',
+              he: 'הקובץ ' + (targetFile || '(קובץ)') + ' מוצג ללא סינון. ההרשאה תקפה רק לקובץ זה.'
+            }}
+          ]);
+          if (State.lastRawMd != null) render(State.lastRawMd, State.lastFileName);
+        }
+      }]);
+      return;
+    }
+
+    if (Deps.dompurify()) installPurifyHook();
+
+    // Front-matter + body.
     const parsed = parseFrontMatter(md);
     const fm = parsed.frontMatter;
-    // Apply front-matter dir if present and user has not overridden via
-    // the toolbar.
     if (fm.dir && !window.__cidraUserDirOverride) {
       applyDir(fm.dir);
     }
@@ -762,9 +1160,34 @@ body.drag-over {
     } else if (fm.documentation_language === 'english') {
       document.documentElement.lang = 'en';
     }
-    const rawHtml = marked.parse(parsed.body);
-    const clean = DOMPurify.sanitize(rawHtml, purifyConfig);
-    document.getElementById('output').innerHTML = clean;
+
+    let rawHtml;
+    try {
+      rawHtml = window.marked.parse(parsed.body);
+    } catch (err) {
+      setEmptyOutput([
+        {lang: 'en', dir: 'ltr', text: 'Markdown parsing failed.'},
+        {lang: 'he', dir: 'rtl', text: 'ניתוח ה-Markdown נכשל.'}
+      ]);
+      Banner.error('parse-md', [{text: 'Markdown parsing failed: ' + String(err && err.message || err)}]);
+      return;
+    }
+
+    let safeHtml;
+    if (Deps.dompurify()) {
+      safeHtml = window.DOMPurify.sanitize(rawHtml, purifyConfig);
+    } else {
+      // User opted in to unsanitized for THIS file — surface a fresh warning.
+      Banner.warning('unsanitized-mode-active', [
+        {bilingual: {
+          en: 'Rendering this file without DOMPurify. Be aware of XSS risk.',
+          he: 'מציג את הקובץ הזה ללא DOMPurify. שים לב לסיכון XSS.'
+        }}
+      ]);
+      safeHtml = rawHtml;
+    }
+
+    out.innerHTML = safeHtml;
   }
 
   // ===========================================================================
@@ -794,19 +1217,29 @@ body.drag-over {
   }
   function loadFile(file) {
     if (!file) return;
+    // Reset per-file unsanitized opt-in BEFORE doing anything else.
+    State.allowUnsanitizedFor = null;
+    Banner.clear('unsanitized-mode');
+    Banner.clear('unsanitized-mode-active');
+
     const nameOk = /\.(md|markdown|txt)$/i.test(file.name);
     if (!nameOk) {
       showWarn('Unsupported file type: ' + file.name);
       return;
     }
-    const MAX = 5 * 1024 * 1024;
-    if (file.size > MAX) {
+    const HARD_MAX = 10 * 1024 * 1024;
+    const SOFT_MAX = 5 * 1024 * 1024;
+    if (file.size > HARD_MAX) {
+      Banner.error('too-big', [{text: 'File exceeds 10 MB limit and was not loaded.'}]);
+      return;
+    }
+    if (file.size > SOFT_MAX) {
       showWarn('File larger than 5 MB may render slowly.');
     }
+    State.lastFileName = file.name;
     const reader = new FileReader();
     reader.onload = function(e) {
       const decoded = decodeBuffer(e.target.result);
-      // Detect mojibake (replacement characters in first 4 KB).
       const sample = decoded.text.slice(0, 4096);
       const replacementCount = (sample.match(/�/g) || []).length;
       if (replacementCount > 3) {
@@ -818,9 +1251,14 @@ body.drag-over {
       }
       document.getElementById('fileInfo').textContent =
         file.name + '  (' + Math.round(file.size / 1024) + ' KB, ' + decoded.encoding + ')';
-      render(decoded.text);
+      render(decoded.text, file.name);
     };
     reader.onerror = function() {
+      Banner.error('file-read', [
+        {text: 'Failed to read file '},
+        {code: file.name},
+        {text: '.'}
+      ]);
       showWarn('Failed to read file.');
     };
     reader.readAsArrayBuffer(file);
@@ -851,101 +1289,265 @@ body.drag-over {
     }
   }
 
-  document.getElementById('filePicker').addEventListener('change', function(e) {
-    if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
-  });
-
-  document.getElementById('btnDir').addEventListener('click', function() {
-    const html = document.documentElement;
-    const cur = html.getAttribute('dir') || 'auto';
-    window.__cidraUserDirOverride = true;
-    const next = cur === 'auto' ? 'rtl' : cur === 'rtl' ? 'ltr' : 'auto';
-    if (next === 'auto') window.__cidraUserDirOverride = false;
-    applyDir(next);
-  });
-
-  document.getElementById('btnTheme').addEventListener('click', function() {
-    const html = document.documentElement;
-    const cur = html.getAttribute('data-theme') || 'light';
-    const next = cur === 'light' ? 'dark' : 'light';
-    html.setAttribute('data-theme', next);
-    document.getElementById('hljs-light').disabled = (next === 'dark');
-    document.getElementById('hljs-dark').disabled = (next === 'light');
-    document.getElementById('btnTheme').textContent =
-      'Theme: ' + (next.charAt(0).toUpperCase() + next.slice(1));
-  });
-
-  document.getElementById('btnMirrorComments').addEventListener('click', function() {
-    window.__cidraMirrorHE = !window.__cidraMirrorHE;
-    document.getElementById('btnMirrorComments').textContent =
-      'Mirror HE Comments: ' + (window.__cidraMirrorHE ? 'On' : 'Off');
-    // Re-render last document if any.
-    if (window.__cidraLastMd) render(window.__cidraLastMd);
-  });
-
-  document.getElementById('btnClear').addEventListener('click', function() {
-    document.getElementById('output').innerHTML =
-      document.querySelector('#output').dataset.emptyHtml ||
-      '<div class="empty">' +
-      '<p class="empty-line" lang="he">טען קובץ Markdown להצגה.</p>' +
-      '<p class="empty-line" lang="en">Load a Markdown file to view.</p>' +
-      '<p class="drop-hint"><span lang="en">Drag and drop a </span>' +
-      '<bdi><code>.md</code></bdi>' +
-      '<span lang="en"> file anywhere, or click </span>' +
-      '<bdi><code>Open .md…</code></bdi>' +
-      '<span lang="en"> above.</span></p>' +
-      '</div>';
-    document.getElementById('fileInfo').textContent = '';
-    hideWarn();
-    window.__cidraLastMd = null;
-  });
-
-  // Save empty state HTML for Clear.
-  document.querySelector('#output').dataset.emptyHtml =
-    document.querySelector('#output').innerHTML;
-
-  // Cache last-loaded markdown so Mirror toggle can re-render.
-  const origRender = render;
-  render = function(md) {     // eslint-disable-line no-func-assign
-    window.__cidraLastMd = md;
-    return origRender(md);
-  };
-
   // ===========================================================================
-  // 10. DRAG AND DROP — anywhere on the window after first load.
+  // 10. WIRE UI — runs UNCONDITIONALLY at DOMContentLoaded, never gated on
+  // dependency state. The toolbar buttons always work; rendering paths
+  // are gated separately inside render().
   // ===========================================================================
-  window.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    document.body.classList.add('drag-over');
-  });
-  window.addEventListener('dragleave', function(e) {
-    if (e.target === document.body || e.target === document.documentElement) {
-      document.body.classList.remove('drag-over');
+  function wireUI() {
+    const $ = function (id) { return document.getElementById(id); };
+
+    const filePicker = $('filePicker');
+    if (filePicker) {
+      filePicker.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+      });
     }
-  });
-  window.addEventListener('drop', function(e) {
-    e.preventDefault();
-    document.body.classList.remove('drag-over');
-    const items = e.dataTransfer.items;
-    // Reject directories.
-    if (items && items.length > 0 && items[0].webkitGetAsEntry) {
-      const entry = items[0].webkitGetAsEntry();
-      if (entry && entry.isDirectory) {
-        showWarn('Cannot load a directory. Drop a single .md file.');
-        return;
+
+    const btnDir = $('btnDir');
+    if (btnDir) {
+      btnDir.addEventListener('click', function () {
+        const html = document.documentElement;
+        const cur = html.getAttribute('dir') || 'auto';
+        window.__cidraUserDirOverride = true;
+        const next = cur === 'auto' ? 'rtl' : cur === 'rtl' ? 'ltr' : 'auto';
+        if (next === 'auto') window.__cidraUserDirOverride = false;
+        applyDir(next);
+      });
+    }
+
+    const btnTheme = $('btnTheme');
+    if (btnTheme) {
+      btnTheme.addEventListener('click', function () {
+        const html = document.documentElement;
+        const cur = html.getAttribute('data-theme') || 'light';
+        const next = cur === 'light' ? 'dark' : 'light';
+        html.setAttribute('data-theme', next);
+        const lightLink = $('hljs-light');
+        const darkLink = $('hljs-dark');
+        if (lightLink) lightLink.disabled = (next === 'dark');
+        if (darkLink)  darkLink.disabled  = (next === 'light');
+        btnTheme.textContent =
+          'Theme: ' + (next.charAt(0).toUpperCase() + next.slice(1));
+      });
+    }
+
+    const btnMirror = $('btnMirrorComments');
+    if (btnMirror) {
+      btnMirror.addEventListener('click', function () {
+        window.__cidraMirrorHE = !window.__cidraMirrorHE;
+        btnMirror.setAttribute('aria-pressed', String(!!window.__cidraMirrorHE));
+        btnMirror.textContent =
+          'Mirror HE Comments: ' + (window.__cidraMirrorHE ? 'On' : 'Off');
+        if (State.lastRawMd != null) render(State.lastRawMd, State.lastFileName);
+      });
+    }
+
+    const btnClear = $('btnClear');
+    if (btnClear) {
+      btnClear.addEventListener('click', function () {
+        const out = $('output');
+        if (out) {
+          out.innerHTML = out.dataset.emptyHtml || '';
+        }
+        const fi = $('fileInfo'); if (fi) fi.textContent = '';
+        hideWarn();
+        State.lastRawMd = null;
+        State.lastFileName = null;
+        State.allowUnsanitizedFor = null;
+        Banner.clear('unsanitized-mode');
+        Banner.clear('unsanitized-mode-active');
+      });
+    }
+
+    // Save empty state HTML for Clear (taken from the pre-existing markup).
+    const out = $('output');
+    if (out) out.dataset.emptyHtml = out.innerHTML;
+
+    // Drag and drop — anywhere on the window.
+    window.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      document.body.classList.add('drag-over');
+    });
+    window.addEventListener('dragleave', function (e) {
+      if (e.target === document.body || e.target === document.documentElement) {
+        document.body.classList.remove('drag-over');
       }
+    });
+    window.addEventListener('drop', function (e) {
+      e.preventDefault();
+      document.body.classList.remove('drag-over');
+      const items = e.dataTransfer && e.dataTransfer.items;
+      if (items && items.length > 0 && items[0].webkitGetAsEntry) {
+        const entry = items[0].webkitGetAsEntry();
+        if (entry && entry.isDirectory) {
+          showWarn('Cannot load a directory. Drop a single .md file.');
+          return;
+        }
+      }
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        loadFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  // ===========================================================================
+  // 11. BOOT — orchestrate dependency status, vendor fallback, and post-load
+  // banners. UI wiring runs FIRST, before any CDN inspection, so chrome is
+  // always live.
+  // ===========================================================================
+  function reportDepStatus() {
+    if (Deps.marked()) {
+      configureRenderer();
     }
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      loadFile(e.dataTransfer.files[0]);
+    if (Deps.hljs()) {
+      registerStubGrammars();
     }
+    if (Deps.dompurify()) {
+      installPurifyHook();
+    }
+
+    if (!Deps.marked()) {
+      Banner.error('no-marked-final', [
+        {bilingual: {
+          en: 'Markdown parser (marked) unavailable from CDN and from ./vendor/marked.min.js. The viewer cannot render documents until this is restored.',
+          he: 'מנתח ה-Markdown (marked) לא זמין מה-CDN ולא מ-./vendor/marked.min.js. לא ניתן להציג מסמכים עד שייפתר.'
+        }}
+      ]);
+    } else {
+      Banner.clear('no-marked-final');
+    }
+    if (!Deps.dompurify()) {
+      Banner.warning('no-dompurify-final', [
+        {bilingual: {
+          en: 'HTML sanitizer (DOMPurify) unavailable. Rendering will be refused for safety; use the per-file "Render anyway" control if you trust the source.',
+          he: 'מסנן HTML (DOMPurify) לא זמין. תצוגת מסמכים נחסמת לבטיחות; השתמש בכפתור "הצג בכל זאת" רק עבור קבצים אמינים.'
+        }}
+      ]);
+    } else {
+      Banner.clear('no-dompurify-final');
+    }
+    if (!Deps.hljs()) {
+      Banner.warning('no-hljs-final', [
+        {bilingual: {
+          en: 'Syntax highlighter (highlight.js) unavailable. Markdown still renders; code blocks will be plain.',
+          he: 'מסמן התחביר (highlight.js) לא זמין. ה-Markdown עדיין מוצג; בלוקי קוד יוצגו ללא צבע.'
+        }}
+      ]);
+    } else {
+      Banner.clear('no-hljs-final');
+    }
+
+    // Per-grammar failures aggregated into a single banner.
+    const failedGrammars = [];
+    const grammars = ['c', 'cpp', 'sql', 'javascript', 'python', 'yaml', 'json', 'xml', 'cobol'];
+    grammars.forEach(function (g) {
+      if (window.__cidraDepFail['hljs-' + g] && !window.__cidraDepLoaded['hljs-' + g]) {
+        failedGrammars.push(g);
+      }
+    });
+    if (failedGrammars.length && Deps.hljs()) {
+      Banner.warning('grammars',
+        [{text: 'Some syntax grammars unavailable (' + failedGrammars.join(', ') +
+                '). Code blocks in these languages render as plain text.'}]);
+    }
+  }
+
+  function boot() {
+    // 1. Wire UI immediately — independent of any CDN outcome.
+    wireUI();
+
+    // 2. Inspect CDN results and attempt ./vendor/ fallback if needed.
+    const failed = window.__cidraDepFail || {};
+    const cdnBlockedSilently = !failed.marked && !Deps.marked();
+    const needsFallback = failed.marked || failed.dompurify || failed.hljs
+                       || !Deps.marked() || !Deps.dompurify() || !Deps.hljs();
+
+    if (!needsFallback) {
+      reportDepStatus();
+      return;
+    }
+
+    Banner.info('vendor-fallback', [
+      {bilingual: {
+        en: cdnBlockedSilently
+            ? 'Browser privacy settings or extensions may be blocking cdn.jsdelivr.net. Trying local ./vendor/ copies...'
+            : 'Some libraries failed to load from CDN. Trying local ./vendor/ copies...',
+        he: 'חלק מהספריות לא נטענו מ-CDN. מנסה ./vendor/ מקומי...'
+      }}
+    ]);
+
+    attemptVendorFallback().then(function () {
+      Banner.clear('vendor-fallback');
+      reportDepStatus();
+    });
+  }
+
+  // ===========================================================================
+  // 12. WATCHDOG — if CDN scripts stall (slow network, 60s+ TCP timeout),
+  // boot UI after 8 seconds even though defer would otherwise wait.
+  // The deferred boot script normally runs before this fires; the watchdog
+  // is the safety net for the worst case.
+  // ===========================================================================
+  if (document.readyState === 'loading') {
+    setTimeout(function () {
+      if (!window.__cidraBooted) {
+        // Mark the un-loaded scripts as failed so boot() goes to vendor fallback.
+        document.querySelectorAll('script[data-dep]').forEach(function (s) {
+          if (!window.__cidraDepLoaded[s.dataset.dep]) {
+            window.__cidraDepFail[s.dataset.dep] = 'timeout';
+          }
+        });
+        if (!window.__cidraBooted) {
+          window.__cidraBooted = true;
+          boot();
+        }
+      }
+    }, 8000);
+  }
+
+  function bootOnce() {
+    if (window.__cidraBooted) return;
+    window.__cidraBooted = true;
+    boot();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootOnce);
+  } else {
+    bootOnce();
+  }
+
+  // ===========================================================================
+  // Diagnostic surface for tests. Frozen so a malicious page script cannot
+  // flip allowUnsanitizedFor from the console. The state OBJECT inside is
+  // mutated by the renderer, but the reference is read-only.
+  // ===========================================================================
+  window.__cidraViewer = Object.freeze({
+    deps: Deps,
+    state: State,
+    loadFile: loadFile,
+    Banner: Banner,
+    boot: boot,
+    failures: function () { return Object.assign({}, window.__cidraDepFail); },
+    loaded:   function () { return Object.assign({}, window.__cidraDepLoaded); }
   });
 
 })();
 </script>
 
-<footer style="text-align:center;color:#9ca3af;font-size:12px;padding:20px;border-top:1px solid #e5e7eb;margin-top:40px;">
-  Part of the B+CIDRA framework.
-  Implements <bdi><code>Agents/shared/multilingual_rendering_protocol.yaml</code></bdi> v1.1.0.
+<!--
+  Footer fix for the leading-period bug.
+  Root cause: <html dir="rtl"> propagated to <footer>. The trailing '.' on
+  the English sentence is a bidi NEUTRAL (UAX#9 N1). In an RTL paragraph
+  it would be reordered to the visual line start, producing ".Part of...".
+  Minimal fix: dir="ltr" on the <footer> establishes an LTR paragraph
+  context, so the period stays at the visual end (the right side).
+  The CSS also sets `unicode-bidi: isolate` on <footer> so neighbouring
+  RTL content cannot leak into the footer's bidi context.
+-->
+<footer dir="ltr" lang="en" style="text-align:center;color:#9ca3af;font-size:12px;padding:20px;border-top:1px solid #e5e7eb;margin-top:40px;">
+  Part of the B+CIDRA framework. Implements <bdi><code>Agents/shared/multilingual_rendering_protocol.yaml</code></bdi> v1.1.0.
 </footer>
 
 </body>
