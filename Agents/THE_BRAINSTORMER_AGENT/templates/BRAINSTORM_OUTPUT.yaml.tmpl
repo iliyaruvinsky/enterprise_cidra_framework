@@ -1,0 +1,163 @@
+# BRAINSTORM_OUTPUT.yaml — produced by THE_BRAINSTORMER_AGENT
+# This file is binding for all downstream CIDRA agents.
+# Generated: [DATE]
+# Project: [PROJECT_NAME]
+
+brainstormer_version: "1.0.0"
+generated_at: "[YYYY-MM-DDTHH:mm:ssZ]"
+project_name: "[PROJECT_NAME]"
+
+# ============================================================
+# Phase 1: Goal elicitation (BRN_001)
+# ============================================================
+goals:
+  purpose:
+    primary: "[modernization_decision | team_handover | compliance_audit | knowledge_preservation | spaghetti_decoding | other]"
+    secondary: []  # optional, in priority order
+    raw_customer_answer: "[verbatim quote]"
+
+  timeline:
+    classification: "[quick_first_pass | iterative_weeks | comprehensive_months]"
+    raw_customer_answer: "[verbatim quote]"
+
+# ============================================================
+# Phase 2: Audience mapping (BRN_002)
+# ============================================================
+audiences:
+  primary:
+    role: "[developer_existing | developer_new | architect | project_manager | business_analyst | auditor | external_vendor]"
+    needs: ["..."]
+
+  secondary:
+    role: "[same options as primary]"
+    needs: ["..."]
+
+  # Dual-audience enforcement: blueprint must address BOTH primary and secondary
+  enforcement_check_passed: false  # set to true only after BRN_006 verification
+
+# ============================================================
+# Phase 3: Input inventory + gap status (BRN_003)
+# ============================================================
+inputs:
+  source_code:
+    status: "[present | absent | partial]"
+    details: "..."
+
+  specification_docs:
+    status: "[present | absent | partial | unknown]"
+    files: []
+
+  ddl_dds_schema:
+    status: "..."
+
+  external_program_sources:
+    status: "..."
+
+  related_programs_in_family:
+    status: "..."
+
+  callers:
+    status: "..."
+
+  prior_documentation:
+    status: "..."
+
+  change_history:
+    status: "..."
+
+  sme_availability:
+    status: "..."
+
+  test_data:
+    status: "..."
+
+  production_telemetry:
+    status: "..."
+
+  code_generator_model:
+    status: "..."
+
+# Customer-acknowledged gaps (✗ = won't be provided)
+acknowledged_gaps:
+  - id: "[gap_id]"
+    why_not_provided: "..."
+    risk_to_documentation: "..."
+
+# ============================================================
+# Phase 4: Format recommendation (BRN_004)
+# ============================================================
+format:
+  template: "[enterprise_7_file | enterprise_7_plus_companions | audit_focused | onboarding_focused | custom_hybrid]"
+  rationale: "..."
+  dual_audience_breakdown:
+    serves_primary: ["file1.md", "file2.md"]
+    serves_secondary: ["file3.md", "file4.md"]
+    serves_both: ["README.md"]
+
+  effort_estimate:
+    skeleton: "X hours"
+    standard: "Y hours"
+    deep: "Z hours"
+
+# ============================================================
+# Phase 5: Blueprint emission — consumed by downstream agents
+# ============================================================
+documenter_config:
+  documentation_language: "[en | he | bilingual | other]"
+  language_policy:
+    business_sections: "[language]"
+    technical_sections: "[language]"
+    validation_report: "[language]"
+  template: "[matches format.template]"
+  output_directory: "./Screens/"
+  component_name: "[COMPONENT_NAME]"
+  validation_report_naming: "[filename pattern]"
+  quality_threshold: 100
+
+chunker_config:
+  strategy_hint: "[section_level | method_level | hybrid | auto]"
+  priorities:
+    - "Items to chunk first"
+    - "Items to chunk last"
+    - "Items to exclude"
+
+recommender_config:
+  enabled: true  # set true if purpose includes modernization_decision
+  focus_areas: ["..."]
+
+# ============================================================
+# Critical findings flagged for downstream emphasis
+# ============================================================
+critical_findings:
+  spec_to_code_references:
+    found_in_comments: false  # set true if spec command refs visible in code
+    pattern: "[regex or description]"
+    expected_count: "[N references]"
+
+  feature_index_required: false  # BRN_008 trigger
+  spaghetti_report_required: false  # BRN_007 trigger
+  executive_summary_required: false  # BRN_009 trigger
+
+# ============================================================
+# Continuous gap-check schedule (BRN_005 — MANDATORY)
+# ============================================================
+gap_check_schedule:
+  checkpoint_1_pre_chunking:
+    triggered: true
+    timestamp: "[DATETIME]"
+    missing_inputs_md_path: "./MISSING_INPUTS.md"
+
+  checkpoint_2_mid_documentation:
+    triggered: false  # set true after first docs are written
+    timestamp: null
+
+  checkpoint_3_post_validation:
+    triggered: false  # set true after validation runs
+    timestamp: null
+
+# ============================================================
+# Audit trail
+# ============================================================
+dialog_log_path: "./BRAINSTORM_DIALOG_LOG.md"
+acknowledged_by_customer_at: "[DATETIME]"
+ready_for_chunker: false  # MUST be true before /chunk may run

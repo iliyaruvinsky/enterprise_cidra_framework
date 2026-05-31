@@ -2,36 +2,42 @@
 # This file defines all available agents in the framework
 # New agents are added here to be discovered by the system
 
-registry_version: "1.1.0"
-last_updated: "2026-01-28"
+registry_version: "1.2.0"
+last_updated: "2026-05-27"
 
 # Agent pipeline order (defines the default workflow)
 pipeline_order:
   - stage: 0
-    agent: "THE_CHUNKER_AGENT"
-    description: "Code preparation and segmentation"
-    produces: "CHUNKS/, DOCUMENTER_INSTRUCTIONS.md"
+    agent: "THE_BRAINSTORMER_AGENT"
+    description: "Goal elicitation, gap analysis, format recommendation (NEW Stage 0)"
+    produces: "BRAINSTORM_OUTPUT.yaml, MISSING_INPUTS.md, BRAINSTORM_DIALOG_LOG.md"
 
   - stage: 1
-    agent: "THE_DOCUMENTER_AGENT"
-    description: "Standardized documentation generation"
-    consumes: "CHUNKS/, DOCUMENTER_INSTRUCTIONS.md"
-    produces: "Screens/[COMPONENT]/ (7-file structure)"
+    agent: "THE_CHUNKER_AGENT"
+    description: "Code preparation and segmentation"
+    consumes: "BRAINSTORM_OUTPUT.yaml (strategy hints)"
+    produces: "CHUNKS/, DOCUMENTER_INSTRUCTIONS.md"
 
   - stage: 2
-    agent: "THE_RECOMMENDER_AGENT"
-    description: "Modernization recommendations"
-    consumes: "Screens/[COMPONENT]/"
-    produces: "RECOMMENDATIONS/"
+    agent: "THE_DOCUMENTER_AGENT"
+    description: "Standardized documentation generation"
+    consumes: "CHUNKS/, DOCUMENTER_INSTRUCTIONS.md, BRAINSTORM_OUTPUT.yaml (template, language, depth)"
+    produces: "Screens/[COMPONENT]/ (7-file structure)"
 
   - stage: 3
+    agent: "THE_RECOMMENDER_AGENT"
+    description: "Modernization recommendations"
+    consumes: "Screens/[COMPONENT]/, BRAINSTORM_OUTPUT.yaml (modernization focus areas)"
+    produces: "RECOMMENDATIONS/"
+
+  - stage: 4
     agent: "THE_INTERPRETER_AGENT"
     description: "Real-time code understanding and context"
     status: "planned"
     consumes: "CHUNKS/, Source code"
     produces: "Context insights, code understanding"
 
-  - stage: 4
+  - stage: 5
     agent: "THE_APPLICATOR_AGENT"
     description: "Automated application of changes and recommendations"
     status: "planned"
@@ -40,6 +46,66 @@ pipeline_order:
 
 # Registered agents
 agents:
+
+  # ============================================
+  # THE_BRAINSTORMER_AGENT (Stage 0 — NEW)
+  # ============================================
+  - id: "THE_BRAINSTORMER_AGENT"
+    display_name: "The Brainstormer"
+    version: "1.0.0"
+    status: "production"
+    category: "elicitation"
+
+    description: |
+      AI agent that runs BEFORE the chunker to elicit project goals,
+      identify missing inputs, and produce a binding documentation blueprint.
+      Designed to prevent reactive discovery of decisions that should have
+      been made upfront (audience, format, depth, language, missing inputs).
+
+    mission: "Turn vague 'document this codebase' into a concrete blueprint + transparent gap list"
+
+    entry_points:
+      primary: "/brainstorm"
+      secondary:
+        - "/brainstorm:gap"
+        - "/brainstorm:status"
+        - "/brainstorm:format"
+
+    files:
+      specification: "THE_BRAINSTORMER_AGENT/agent_specification.md"
+      skills: "THE_BRAINSTORMER_AGENT/skills.yaml"
+      templates: "THE_BRAINSTORMER_AGENT/templates/"
+
+    dependencies:
+      requires: []
+      optional: []
+
+    # Pipeline communication (per agent_handoff_protocol.md)
+    consumes:
+      - type: "customer_dialog"
+        description: "Three pivotal questions answered by the customer"
+      - type: "project_root_listing"
+        description: "What files the customer has already placed in the project"
+
+    produces:
+      - type: "blueprint"
+        path: "BRAINSTORM_OUTPUT.yaml"
+        description: "Binding YAML blueprint consumed by all downstream agents"
+      - type: "gap_report"
+        path: "MISSING_INPUTS.md"
+        description: "Customer-facing missing-inputs checklist (refreshed at 3 checkpoints)"
+      - type: "audit"
+        path: "BRAINSTORM_DIALOG_LOG.md"
+        description: "Conversation transcript for audit trail"
+
+    next_agent: "THE_CHUNKER_AGENT"
+
+    critical_rules:
+      - "BRN_R1: Never proceed without elicitation"
+      - "BRN_R2: Always re-surface gaps at all three checkpoints"
+      - "BRN_R3: No silent goal substitution"
+      - "BRN_R4: Honest scope vs depth — always quote effort"
+      - "BRN_R5: Dual-audience enforcement"
 
   # ============================================
   # THE_CHUNKER_AGENT
@@ -340,6 +406,11 @@ agents:
 
 # Agent categories
 categories:
+  - id: "elicitation"
+    name: "Goal Elicitation & Blueprint"
+    description: "Agents that establish goals and produce blueprints before processing"
+    agents: ["THE_BRAINSTORMER_AGENT"]
+
   - id: "preparation"
     name: "Code Preparation"
     description: "Agents that prepare code for processing"
@@ -367,11 +438,14 @@ categories:
 
 # CIDRA Framework Explanation
 cidra_acronym:
+  B: "Brainstormer - Goal elicitation and blueprint (Stage 0, NEW)"
   C: "Chunker - Code preparation and segmentation"
   I: "Interpreter - Code understanding (planned)"
   D: "Documenter - Documentation generation"
   R: "Recommender - Modernization recommendations"
   A: "Applicator - Change application (planned)"
+
+# Extended acronym: B+CIDRA pipeline = full lifecycle from goal to applied change
 
 # How to add a new agent
 adding_new_agent:

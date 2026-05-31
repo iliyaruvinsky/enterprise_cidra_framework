@@ -1,0 +1,604 @@
+# THE_BRAINSTORMER_AGENT - Skills Definition
+# Version: 1.0.0
+# Framework: Universal CIDRA
+# Stage: 0 (Pre-Chunker)
+
+---
+
+agent:
+  name: "THE_BRAINSTORMER_AGENT"
+  version: "1.0.0"
+  stage: 0
+  mission: "Turn vague 'document this codebase' into a concrete blueprint + transparent gap list, BEFORE chunking begins"
+
+  core_principles:
+    - "Three pivotal questions, asked once, answered before chunking"
+    - "Continuous gap communication — before, during, after"
+    - "Dual-audience output — manager flows + developer code-mapping"
+    - "Honest blueprint — recommend format that fits goal, not default"
+    - "Spaghetti-aware — label confusing patterns, don't pretend cleanliness"
+    - "Traceability as first-class artifact — feature ↔ code is core, not bonus"
+
+  position_in_pipeline: "Runs BEFORE THE_CHUNKER_AGENT. Produces the blueprint that all downstream agents consume."
+
+---
+
+# USER-INVOKED SKILLS (Slash Commands)
+
+user_invoked_skills:
+
+  - skill_id: "BRN_001"
+    name: "brainstorm"
+    command: "/brainstorm"
+    type: "main_entry"
+    description: "Start the goal-elicitation dialog with the customer"
+    when: "Once per project, before /chunk"
+
+    workflow:
+      - step: 1
+        action: "goal_elicitation"
+        description: "Ask the 3 pivotal questions (purpose, audience, timeline)"
+      - step: 2
+        action: "audience_mapping"
+        description: "Identify primary + secondary audiences"
+      - step: 3
+        action: "input_inventory"
+        description: "Catalogue what the customer has provided"
+      - step: 4
+        action: "gap_analysis"
+        description: "Identify what's missing for 'perfect' documentation"
+      - step: 5
+        action: "format_recommendation"
+        description: "Map goals + inputs to documentation template"
+      - step: 6
+        action: "blueprint_emission"
+        description: "Produce BRAINSTORM_OUTPUT.yaml"
+      - step: 7
+        action: "gap_report_emission"
+        description: "Produce MISSING_INPUTS.md for customer review"
+
+    outputs:
+      - "BRAINSTORM_OUTPUT.yaml"
+      - "MISSING_INPUTS.md"
+      - "BRAINSTORM_DIALOG_LOG.md"
+
+  - skill_id: "BRN_002_CMD"
+    name: "brainstorm:gap"
+    command: "/brainstorm:gap"
+    type: "checkpoint"
+    description: "Re-issue the missing-inputs report. Run at any checkpoint."
+
+    when:
+      - "Pre-chunking (after /brainstorm initial Q&A)"
+      - "Mid-documentation (after first 1-2 files written)"
+      - "Post-validation (after /document:validate)"
+      - "On customer request"
+
+    outputs:
+      - "MISSING_INPUTS.md (refreshed)"
+
+  - skill_id: "BRN_003_CMD"
+    name: "brainstorm:status"
+    command: "/brainstorm:status"
+    type: "monitoring"
+    description: "Show current blueprint understanding — goals, inputs known, gaps open"
+
+    outputs:
+      - goals_summary: "Purpose, audience, timeline from BRAINSTORM_OUTPUT.yaml"
+      - inputs_inventory: "What's confirmed available"
+      - open_gaps: "Critical + high gaps still unfilled"
+      - format_chosen: "Recommended template + rationale"
+
+  - skill_id: "BRN_004_CMD"
+    name: "brainstorm:format"
+    command: "/brainstorm:format"
+    type: "explanation"
+    description: "Show the recommended documentation format with justification"
+
+    outputs:
+      - chosen_template: "Name of template (enterprise_7_file, audit_focused, custom, etc.)"
+      - rationale: "Why this template fits the elicited goals"
+      - dual_audience_breakdown: "How the template serves PM vs developer audiences"
+      - effort_estimate: "Per coverage level (skeleton / standard / deep)"
+
+---
+
+# INTERNAL SKILLS (Automatic Capabilities)
+
+internal_skills:
+
+  # ========================================================
+  # BRN_001 — goal_elicitation
+  # ========================================================
+  - skill_id: "BRN_001"
+    name: "goal_elicitation"
+    type: "internal"
+    critical: true
+    description: "Ask the three pivotal questions and record customer answers"
+
+    questions:
+      - id: "Q_PURPOSE"
+        text:
+          en: "Why does the customer want this documentation?"
+          he: "למה התיעוד הזה קיים?"
+        options:
+          - "Modernization decision (rewrite vs maintain)"
+          - "Team handover (new developers coming in)"
+          - "Compliance / regulatory audit"
+          - "Knowledge preservation (before SME retirement)"
+          - "Code understanding / spaghetti decoding"
+          - "Multiple (specify priority order)"
+          - "Other (free text)"
+        stores_as: "purpose"
+
+      - id: "Q_AUDIENCE"
+        text:
+          en: "Who reads this documentation first?"
+          he: "מי קורא את התיעוד ראשון?"
+        options:
+          - "Developer (existing maintainer)"
+          - "Developer (new to the system)"
+          - "Architect (rewrite/maintain decision)"
+          - "Project manager (scope + tracking)"
+          - "Business analyst (spec ↔ code)"
+          - "Auditor / compliance officer"
+          - "External vendor (handover)"
+          - "Multiple (specify primary + secondary)"
+        stores_as: "audiences"
+        notes: "Always supports multiple. The blueprint must address ALL named audiences."
+
+      - id: "Q_TIMELINE"
+        text:
+          en: "Timeline expectations?"
+          he: "כמה זמן יש?"
+        options:
+          - "Quick first-pass (hours to days)"
+          - "Iterative refinement (weeks)"
+          - "Comprehensive (months)"
+        stores_as: "timeline"
+
+    conflict_detection:
+      rule: "If purpose=modernization-decision AND timeline=quick-first-pass, surface the conflict and ask the customer to choose"
+      rule: "If audience includes both PM and developer, the blueprint MUST produce artifacts for both — do not silently prioritize one"
+
+  # ========================================================
+  # BRN_002 — audience_mapping
+  # ========================================================
+  - skill_id: "BRN_002"
+    name: "audience_mapping"
+    type: "internal"
+    critical: true
+    description: "Convert audience selections into output requirements"
+
+    mappings:
+      developer_existing:
+        needs: ["code↔feature index", "deep-dive on tricky sections", "spaghetti report"]
+        format_implications: "enterprise_7_file + feature_index"
+
+      developer_new:
+        needs: ["onboarding overview", "code structure tour", "code↔feature index"]
+        format_implications: "enterprise_7_file + onboarding_intro file"
+
+      architect:
+        needs: ["dependency analysis", "external integrations", "technology assessment"]
+        format_implications: "enterprise_7_file + RECOMMENDER stage"
+
+      project_manager:
+        needs: ["flow diagrams", "scope summary", "executive summary", "effort estimates"]
+        format_implications: "enterprise_7_file + executive_summary.md + diagrams"
+
+      business_analyst:
+        needs: ["spec↔code mapping (critical)", "business logic catalogue"]
+        format_implications: "enterprise_7_file + spec_to_code_map (primary deliverable)"
+
+      auditor:
+        needs: ["evidence-anchored claims", "controls documentation", "compliance trace"]
+        format_implications: "audit_focused template"
+
+  # ========================================================
+  # BRN_003 — input_gap_analysis
+  # ========================================================
+  - skill_id: "BRN_003"
+    name: "input_gap_analysis"
+    type: "internal"
+    critical: true
+    description: "Compare what's available to what's needed; produce structured gap list"
+
+    standard_input_categories:
+      - id: "source_code"
+        criticality: "always_required"
+        questions: ["Is the source provided?", "All files? Which languages?"]
+
+      - id: "specification_docs"
+        criticality: "high"
+        questions: ["Is there a written spec?", "How current is it vs the code?"]
+
+      - id: "ddl_dds_schema"
+        criticality: "critical_for_data_processing"
+        questions: ["Are DDS/DDL definitions available?", "Without them, record structures are unknown"]
+
+      - id: "external_program_sources"
+        criticality: "critical_if_many_calls"
+        questions: ["Sources of called programs?", "If absent, behavior is opaque"]
+
+      - id: "related_programs_in_family"
+        criticality: "high"
+        questions: ["What programs in the same module/family?"]
+
+      - id: "callers"
+        criticality: "high"
+        questions: ["What program(s) invoke this one?", "Production trigger?"]
+
+      - id: "prior_documentation"
+        criticality: "medium"
+        questions: ["Any existing docs?", "Wiki/Word/Excel/PDF — even outdated counts"]
+
+      - id: "change_history"
+        criticality: "medium"
+        questions: ["Version control log?", "Manual changelog?", "EPIC tickets?"]
+
+      - id: "sme_availability"
+        criticality: "high"
+        questions: ["Can we get 30 min with someone who knows the history?"]
+
+      - id: "test_data"
+        criticality: "medium"
+        questions: ["Sample inputs? Sample outputs?", "Test cases?"]
+
+      - id: "production_telemetry"
+        criticality: "medium"
+        questions: ["Runtime logs?", "Job-scheduling config?", "Error history?"]
+
+      - id: "code_generator_model"
+        criticality: "high_for_generated_code"
+        questions: ["If code is from a generator (CA 2E, Synon, etc.), is the model available?"]
+
+    output_format:
+      file: "MISSING_INPUTS.md"
+      structure: |
+        # MISSING_INPUTS.md (refreshed at every checkpoint)
+
+        ## 🔴 CRITICAL — blocks "perfect" documentation
+        ☐ Item 1 — what it is, why it's critical, what we can't do without it
+        ☐ Item 2 — ...
+
+        ## 🟡 HIGH — significantly improves quality
+        ☐ Item 3 — ...
+
+        ## 🟢 MEDIUM — adds context
+        ☐ Item 4 — ...
+
+        ## Acknowledged gaps (customer chose not to provide)
+        ✗ Item N — recorded as declined; documentation proceeds with explicit risk note
+
+  # ========================================================
+  # BRN_004 — format_recommendation
+  # ========================================================
+  - skill_id: "BRN_004"
+    name: "format_recommendation"
+    type: "internal"
+    critical: true
+    description: "Map goals + inputs to a recommended documentation template"
+
+    template_catalogue:
+      - id: "enterprise_7_file"
+        suits: ["modernization_decision", "team_handover", "general_documentation"]
+        files: 7
+        description: "CIDRA default — 01 spec, 02 interface, 03 technical, 04 business-logic, 05 code-artifacts, README, validation report"
+
+      - id: "enterprise_7_plus_companions"
+        suits: ["spaghetti_decoding", "dual_audience_pm_dev"]
+        files: "7 + companions"
+        description: "Adds executive_summary.md, feature_index.md, spaghetti_report.md, and N command-deep-dives"
+
+      - id: "audit_focused"
+        suits: ["compliance_audit", "regulatory_review"]
+        files: "4-5"
+        description: "Smaller scope, evidence-anchored, controls-mapped"
+
+      - id: "onboarding_focused"
+        suits: ["team_handover", "developer_new"]
+        files: "5"
+        description: "Includes onboarding_intro, code_tour, and rapid-orientation artifacts"
+
+      - id: "custom_hybrid"
+        suits: ["unique_project_needs"]
+        files: "variable"
+        description: "Build a tailored skeleton per project"
+
+    output:
+      chosen_template: "string"
+      rationale: "Why this template fits"
+      dual_audience_breakdown: "How it serves each named audience"
+      effort_estimate: "Skeleton / standard / deep — hours per level"
+
+  # ========================================================
+  # BRN_005 — continuous_gap_check ⭐ CRITICAL
+  # ========================================================
+  - skill_id: "BRN_005"
+    name: "continuous_gap_check"
+    type: "internal"
+    critical: true
+    mandatory: true
+    description: "Re-surface missing inputs at three project checkpoints — MANDATORY"
+
+    checkpoints:
+      - id: "checkpoint_1_pre_chunking"
+        trigger: "After /brainstorm Phase 5, before /chunk"
+        action: "Produce initial MISSING_INPUTS.md, customer acknowledges"
+
+      - id: "checkpoint_2_mid_documentation"
+        trigger: "After first 1-2 documentation files are written"
+        action: "Produce refreshed MISSING_INPUTS.md based on what the work has revealed (e.g. external programs heavily called → flag them)"
+
+      - id: "checkpoint_3_post_validation"
+        trigger: "After /document:validate produces a score"
+        action: "Produce final MISSING_INPUTS.md noting which gaps would have lifted the score or enabled deeper analysis"
+
+    rule: |
+      The brainstormer (or a downstream agent calling it) MUST produce a fresh MISSING_INPUTS.md
+      at each checkpoint. The customer is not asked permission to receive these reports —
+      they are delivered automatically. Hiding gaps to keep velocity is a violation.
+
+    on_violation:
+      severity: "critical"
+      message: "Gap-check skipped. The documentation cannot be marked complete until the gap report is current."
+
+  # ========================================================
+  # BRN_006 — dual_audience_lens
+  # ========================================================
+  - skill_id: "BRN_006"
+    name: "dual_audience_lens"
+    type: "internal"
+    critical: true
+    description: "Ensure every artifact serves BOTH PM-style and developer-style readers"
+
+    enforcement_check:
+      before_phase_5_complete: |
+        Verify the blueprint includes:
+        - At least one artifact for the primary audience
+        - At least one artifact for the secondary audience
+        - At least one artifact that serves both (e.g. the README index)
+
+    artifact_classification:
+      pm_oriented:
+        - "executive_summary.md"
+        - "DIAGRAMS.md (system context, MAINLINE dispatcher, data flow)"
+        - "README.md (overview section)"
+
+      dev_oriented:
+        - "feature_index.md"
+        - "spaghetti_report.md"
+        - "command_deep_dive_*.md"
+        - "code_artifacts.md"
+
+      dual_audience:
+        - "README.md"
+        - "01_PROGRAM_SPECIFICATION.md"
+        - "04_BUSINESS_LOGIC.md"
+
+  # ========================================================
+  # BRN_007 — spaghetti_pattern_detection
+  # ========================================================
+  - skill_id: "BRN_007"
+    name: "spaghetti_pattern_detection"
+    type: "internal"
+    description: "Identify recurring confusing patterns, dead code candidates, repeated logic"
+
+    detection_categories:
+      - id: "recurring_pattern"
+        signal: "Same code block appears N times (e.g. CA 2E generated MOVE blocks)"
+        action: "Document once with reference; do not narrate N times"
+
+      - id: "dead_code_candidate"
+        signal: "Section never referenced by any PERFORM, never reached from MAINLINE"
+        action: "Flag in spaghetti_report.md as 'likely unreached — verify with customer'"
+
+      - id: "tangled_branching"
+        signal: "Section with >5 nested IF/ELSE levels"
+        action: "Flag as 'complex branching — consider documenting decision table'"
+
+      - id: "naming_obscurity"
+        signal: "Auto-generated names (e.g. WUKIRZ, WL0180) with no semantic comment"
+        action: "Flag for SME interview"
+
+      - id: "comment_code_drift"
+        signal: "Hebrew/English comment claims behavior, code does something else"
+        action: "Flag in spaghetti_report.md as 'comment-code drift — investigate'"
+
+    output:
+      file: "spaghetti_report.md (when applicable)"
+      sections:
+        - "Recurring patterns (de-duplicated reference list)"
+        - "Dead code candidates"
+        - "Tangled branching hotspots"
+        - "Comment/code drift candidates"
+        - "Naming obscurity hotspots"
+
+  # ========================================================
+  # BRN_008 — traceability_index_blueprint
+  # ========================================================
+  - skill_id: "BRN_008"
+    name: "traceability_index_blueprint"
+    type: "internal"
+    description: "Plan the feature ↔ code location index as a first-class deliverable"
+
+    when_applicable:
+      - "Goal includes spaghetti_decoding OR business_analyst audience"
+      - "Code contains explicit feature markers (comments, version tags, EPIC refs)"
+
+    index_structure:
+      file: "feature_index.md (or 04_BUSINESS_LOGIC.md augmentation)"
+      table_columns:
+        - "Feature / spec reference"
+        - "Header location (file:line range)"
+        - "Lines location (file:line range)"
+        - "External programs called"
+        - "Status (active / deprecated / unclear)"
+
+    population_strategy:
+      - "If spec uses numbered references (e.g. 1.1.1, 1.4.4), grep code for those literals in comments"
+      - "If spec uses named features, grep for the keywords"
+      - "Cross-check against PERFORM targets — every PERFORM target should map to a feature or framework category"
+
+  # ========================================================
+  # BRN_009 — executive_summary_generation
+  # ========================================================
+  - skill_id: "BRN_009"
+    name: "executive_summary_generation"
+    type: "internal"
+    description: "Produce a one-page summary for the PM audience"
+
+    when_applicable:
+      - "Audience includes project_manager"
+      - "Audience includes architect"
+
+    structure:
+      length: "1 page (≤500 words narrative + key stats table)"
+      sections:
+        - "What the program does (1 paragraph, careful language)"
+        - "Key statistics (lines, sections, features) — table"
+        - "Architecture pattern in 1 sentence"
+        - "Status assessment (active features, deprecated, unknown)"
+        - "What this documentation covers / does NOT cover (3 bullets each)"
+        - "Next-step options for the customer (table)"
+
+  # ========================================================
+  # BRN_010 — honest_input_communication ⭐ CRITICAL
+  # ========================================================
+  - skill_id: "BRN_010"
+    name: "honest_input_communication"
+    type: "internal"
+    critical: true
+    mandatory: true
+    description: "Always tell the customer what's missing — before, during, after — even if it slows the project"
+
+    mandates:
+      - "BEFORE: Phase 3 gap analysis is delivered before /chunk runs"
+      - "DURING: Mid-project gap refresh at every documentation milestone"
+      - "AFTER: Post-validation gap report identifies what additional inputs would have improved the score"
+      - "Customer cannot opt out of receiving these reports — they are delivered automatically"
+      - "Hidden gaps are a CIDRA framework violation"
+
+    forbidden_behavior:
+      - "Silently substituting a 'good enough' input for a missing critical one"
+      - "Omitting a gap from the report to make the documentation appear more complete"
+      - "Marking documentation 'final' when MISSING_INPUTS.md has unacknowledged critical items"
+
+---
+
+# DIALOG SKILLS (Interactive)
+
+dialog_skills:
+
+  - skill_id: "BRN_DLG_001"
+    name: "elicitation_dialog"
+    type: "dialog"
+    critical: true
+    description: "The opening 3-question dialog with the customer"
+    when: "ALWAYS at start of /brainstorm"
+
+    flow: |
+      BRAINSTORMER: שלום. לפני שנתחיל לעבוד על הקוד, אני צריך להבין מה אנחנו מנסים להשיג.
+      שלוש שאלות:
+
+      1. למה התיעוד הזה קיים?
+      2. מי קורא אותו ראשון?
+      3. כמה זמן יש?
+
+      (BRN_001 / BRN_002 process the answers)
+
+      BRAINSTORMER: הבנתי. עכשיו אני צריך לבדוק מה יש לך זמין. רגע אחד.
+
+      (BRN_003 runs gap analysis)
+
+      BRAINSTORMER: הנה רשימת הקלטים החסרים שיכולים להעלות את איכות התיעוד.
+      תחזיר לי אותה מסומנת לפני שאתחיל.
+
+  - skill_id: "BRN_DLG_002"
+    name: "format_proposal_dialog"
+    type: "dialog"
+    description: "Propose the chosen format and rationale; allow customer to override"
+    when: "After Phase 4"
+
+    flow: |
+      BRAINSTORMER: על סמך המטרות שלך והקלטים הזמינים, אני ממליץ:
+
+        תבנית: [TEMPLATE_NAME]
+        רציונל: [WHY]
+        קבצי פלט: [LIST]
+        מאמץ משוער: skeleton X שעות / standard Y שעות / deep Z שעות
+
+      רוצה להמשיך עם זה, או לשנות משהו?
+
+  - skill_id: "BRN_DLG_003"
+    name: "gap_acknowledgment_dialog"
+    type: "dialog"
+    description: "Walk the customer through the gap list and record acknowledgments"
+    when: "Before /chunk runs; at each subsequent checkpoint"
+
+    flow: |
+      BRAINSTORMER: כאן MISSING_INPUTS.md העדכני.
+      אבקש סימון ✓ אם תוכל לספק, ✗ אם לא.
+
+      [LIST]
+
+      ✗ פירושו "מאשר שלא יסופק" — התיעוד יציין את החוסר במפורש כסיכון מתועד.
+
+---
+
+# CONFIGURATION
+
+configuration:
+
+  defaults:
+    output_directory: "./"
+    output_files:
+      - "BRAINSTORM_OUTPUT.yaml"
+      - "MISSING_INPUTS.md"
+      - "BRAINSTORM_DIALOG_LOG.md"
+    require_acknowledgment_before_chunk: true
+    refresh_gap_report_at_checkpoints: true
+
+  bilingual:
+    supported_languages:
+      - "english"
+      - "hebrew"
+      - "arabic"
+      - "russian"
+      - "spanish"
+      - "french"
+      - "german"
+    default: "matches_documenter_setting"
+
+---
+
+# DEPENDENCIES
+
+dependencies:
+
+  reads_from:
+    - "Customer input (dialog)"
+    - "Project root file listing"
+    - "Source Code/ (if exists)"
+
+  produces_for:
+    - "THE_CHUNKER_AGENT (reads BRAINSTORM_OUTPUT.yaml for strategy hints)"
+    - "THE_DOCUMENTER_AGENT (reads BRAINSTORM_OUTPUT.yaml for template, language, depth)"
+    - "THE_RECOMMENDER_AGENT (reads BRAINSTORM_OUTPUT.yaml to know whether modernization is the goal)"
+    - "Customer (MISSING_INPUTS.md)"
+
+---
+
+# VERSION HISTORY
+
+version_history:
+  - version: "1.0.0"
+    date: "2026-05-27"
+    changes:
+      - "Initial agent definition"
+      - "10 BRN skills (4 user-invoked, 6 internal + 2 mandatory critical)"
+      - "5-phase workflow (elicitation → inventory → gaps → format → blueprint)"
+      - "Designed retrospectively after MACCABI RK1_PHARMACY_JOURNAL project"
+      - "5 mandatory behavioral rules (BRN_R1 through BRN_R5)"
+      - "Outputs: BRAINSTORM_OUTPUT.yaml + MISSING_INPUTS.md + BRAINSTORM_DIALOG_LOG.md"

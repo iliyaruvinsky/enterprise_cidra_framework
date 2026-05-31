@@ -1,20 +1,23 @@
 # CIDRA Framework - Manifest
-# Chunker + Interpreter + Documenter + Recommender + Applicator
+# Brainstormer + Chunker + Interpreter + Documenter + Recommender + Applicator (B+CIDRA)
 # https://github.com/iliyaruvinsky/enterprise_cidra_framework
 
 name: "cidra-framework"
 display_name: "CIDRA Framework"
-description: "Universal AI agents for code chunking, documentation, and modernization recommendations"
-version: "1.0.0"
+description: "Universal AI agents for goal elicitation, code chunking, documentation, and modernization recommendations"
+version: "1.1.0"
 license: "MIT"
 
-# CIDRA Acronym
+# CIDRA Acronym (extended with B = Brainstormer in v1.1.0)
 cidra:
+  B: "Brainstormer - Goal elicitation and blueprint (Stage 0, added v1.1.0)"
   C: "Chunker - Code preparation and segmentation"
   I: "Interpreter - Code understanding (planned)"
   D: "Documenter - Documentation generation"
   R: "Recommender - Modernization recommendations"
   A: "Applicator - Change application (planned)"
+
+# Extended acronym: B+CIDRA = full lifecycle from goal to applied change
 
 # Minimum requirements
 requirements:
@@ -31,10 +34,22 @@ metadata:
 
 # Agents included in this framework
 agents:
+  - id: "THE_BRAINSTORMER_AGENT"
+    path: "Agents/THE_BRAINSTORMER_AGENT"
+    version: "1.0.0"
+    status: "production"
+    stage: 0
+    commands:
+      - "/brainstorm"
+      - "/brainstorm:gap"
+      - "/brainstorm:status"
+      - "/brainstorm:format"
+
   - id: "THE_CHUNKER_AGENT"
     path: "Agents/THE_CHUNKER_AGENT"
     version: "1.0.1"
     status: "production"
+    stage: 1
     commands:
       - "/chunk"
       - "/chunk:analyze"
@@ -161,6 +176,17 @@ supported_technologies:
 
 # Version history
 changelog:
+  - version: "1.1.0"
+    date: "2026-05-27"
+    changes:
+      - "Added THE_BRAINSTORMER_AGENT (Stage 0)"
+      - "Extended acronym to B+CIDRA"
+      - "10 BRN skills including BRN_005 (continuous_gap_check) and BRN_010 (honest_input_communication) marked CRITICAL"
+      - "5 mandatory behavioral rules for BRN (BRN_R1 through BRN_R5)"
+      - "New slash commands: /brainstorm, /brainstorm:gap, /brainstorm:status, /brainstorm:format"
+      - "Designed retrospectively after the MACCABI RK1_PHARMACY_JOURNAL project"
+      - "Updated registry.yaml to v1.2.0 with brainstormer in pipeline_order"
+
   - version: "1.0.0"
     date: "2025-01"
     changes:
