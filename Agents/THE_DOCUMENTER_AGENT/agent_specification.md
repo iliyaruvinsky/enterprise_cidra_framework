@@ -1,8 +1,9 @@
 # THE_DOCUMENTER - Universal Code Documentation Agent
 
-**Version**: 1.0
-**Date**: November 2025
+**Version**: 1.2.0
+**Date**: May 2026 (v1.2.0); November 2025 (v1.0)
 **Based On**: Proven MACCABI ICM Methodology (100% accuracy, zero hallucinations)
+**v1.2.0 addition**: Mandatory multilingual rendering protocol load (`Agents/shared/multilingual_rendering_protocol.yaml` v1.1.0) for any RTL+LTR mixed documentation. Companion viewer at `Protocols/viewer/viewer.html`.
 
 ---
 
@@ -143,6 +144,36 @@ Generate 100% accurate code documentation with zero hallucinations through stric
 
 ## 📋 Universal Workflow Process
 
+### Phase 0: MANDATORY PREPROCESSING (Shared Protocols)
+```
+Before any /document, /document:validate, or /document:fix invocation,
+the agent MUST load these three shared protocols (once per session):
+
+1. Agents/shared/anti_hallucination_engine.yaml
+   - 10 commandments, forbidden-words list, careful-language phrases
+   - Source of truth for DOC_INT_005, DOC_INT_006
+
+2. Agents/shared/validation_framework.yaml
+   - 100-point scoring schema, category weights
+   - Source of truth for DOC_QA_001
+
+3. Agents/shared/multilingual_rendering_protocol.yaml  (v1.1.0)
+   - REQUIRED when documentation_language is anything other than
+     monolingual English, OR when source text contains Hebrew, Arabic,
+     or any other RTL script
+   - Defines: code-always-LTR, identifier isolation via <bdi>,
+     table direction policy, bilingual heading forms, number range
+     atom rule, encoding (UTF-8 without BOM), front-matter convention
+   - 12 validation checks (MRP_VC_001..MRP_VC_012) run as part of the
+     100-point gate
+   - Enforced by DOC_INT_015 in skills.yaml
+   - Canonical preview surface: Protocols/viewer/viewer.html
+
+Mandatory reads do NOT need to be repeated on every /document call
+within a single agent session — once per session is sufficient. Each
+new session re-reads.
+```
+
 ### Phase 1: ANALYZE
 ```
 1. Receive documentation request
@@ -172,9 +203,22 @@ Generate 100% accurate code documentation with zero hallucinations through stric
 2. Generate files using plugin template structure
 3. Use ONLY careful language throughout
    Examples: "appears that", "according to code", "seems to"
+   For bilingual docs: 5 hedges PER LANGUAGE (MRP_VC_008), not 5 total
 4. Include actual code snippets with line numbers
 5. Mark all shared vs unique elements clearly
 6. Add limitations section (what is/isn't known from code)
+7. For bilingual content (Hebrew + English / Arabic + English):
+   - Open file with YAML front-matter: dir + documentation_language
+   - Inline-backtick every English identifier in Hebrew prose (MRP_003)
+   - Code blocks render LTR with Hebrew comments isolated (MRP_001)
+   - Use colon + <bdi> subtitle for bilingual headings (em-dash deprecated)
+   - Line ranges as single backtick atom with en-dash (`4105–5957`)
+   - Tables: code-only cells stay LTR; mixed cells split or hoist
+   - Save as UTF-8 without BOM:
+     [System.IO.File]::WriteAllText($path, $content,
+       [System.Text.UTF8Encoding]::new($false))
+   - See Agents/shared/multilingual_rendering_protocol.yaml v1.1.0
+     for the full deterministic contract.
 ```
 
 ### Phase 4: VERIFY

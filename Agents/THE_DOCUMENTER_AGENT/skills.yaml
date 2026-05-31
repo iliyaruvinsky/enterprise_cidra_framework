@@ -1,12 +1,12 @@
 # THE_DOCUMENTER_AGENT - Skills Definition
-# Version: 1.0.0
+# Version: 1.2.0
 # Framework: Universal CIDRA
 
 ---
 
 agent:
   name: "THE_DOCUMENTER_AGENT"
-  version: "1.0.0"
+  version: "1.2.0"
   mission: "Generate 100% accurate, zero-hallucination documentation based on actual code analysis"
 
   core_principles:
@@ -16,8 +16,23 @@ agent:
     - "Cross-reference marking - identify shared vs unique elements"
     - "Limitations transparency - clearly state what is/isn't known"
     - "Multilingual support - documentation in any language"
+    - "Bilingual rendering compliance - obey multilingual_rendering_protocol.yaml for any RTL+LTR mix"
 
   quality_standard: "100/100 - only perfect scores acceptable for delivery"
+
+  # Shared protocols loaded BEFORE any /document workflow runs.
+  # Order matters: anti-hallucination first, validation framework second,
+  # multilingual rendering third (it depends on careful-language hedging
+  # rules from anti-hallucination + validation_framework).
+  mandatory_shared_protocols:
+    - path: "Agents/shared/anti_hallucination_engine.yaml"
+      load_step: "Phase 0 — first read every session"
+    - path: "Agents/shared/validation_framework.yaml"
+      load_step: "Phase 0 — second read every session"
+    - path: "Agents/shared/multilingual_rendering_protocol.yaml"
+      load_step: "Phase 0 — third read; required for any bilingual output"
+      version: "1.1.0"
+      enforced_by: "DOC_INT_015 (see internal_skills below)"
 
 ---
 
@@ -539,6 +554,81 @@ internal_skills:
       - "ALWAYS CHOOSE the answer you would REALLY use for correct answer"
       - "EVEN if requires additional effort - CHOOSE ACCURACY OVER CONVENIENCE"
 
+  - skill_id: "DOC_INT_015"
+    name: "multilingual_rendering_compliance"
+    type: "internal"
+    critical: true
+    description: |
+      Loads and applies Agents/shared/multilingual_rendering_protocol.yaml
+      v1.1.0 (MRP) whenever the documentation_language is anything other
+      than monolingual English. Required for Hebrew, Arabic, bilingual,
+      and any document mixing RTL + LTR scripts.
+
+    reads: "Agents/shared/multilingual_rendering_protocol.yaml"
+
+    applies_when:
+      - "documentation_language is hebrew, arabic, or bilingual"
+      - "documentation contains any Hebrew or Arabic characters"
+      - "documentation contains a Mermaid diagram with non-Latin labels"
+
+    enforces:
+      core_principles:
+        - "MRP_001 code_is_always_ltr — fenced blocks and inline backticks render LTR"
+        - "MRP_002 explicit_paragraph_direction — every block declares its direction"
+        - "MRP_003 identifier_isolation — inline backticks render as <bdi><code>"
+        - "MRP_004 no_mixed_direction_table_cells — split or hoist"
+        - "MRP_005 no_legacy_bidi_controls — no U+202A..U+202E in source"
+        - "MRP_006 markup_over_controls — prefer <bdi> and dir attribute"
+        - "MRP_007 careful_language_per_language — 5 hedges per language, not 5 total"
+
+      authoring_rules:
+        identifier_density_budget: "no more than 25% of running prose chars in backticks"
+        identifier_consistency: "an identifier is always or never backticked within a document"
+        number_ranges: "single backtick atom with en-dash inside, e.g. `4105–5957`"
+        bilingual_headings: "use colon + <bdi> subtitle, OR two separate adjacent headings; em-dash deprecated"
+        urls: "always backticked (autolink disabled in viewer)"
+        front_matter: "open bilingual docs with --- dir: rtl|ltr|auto / documentation_language: ... ---"
+
+      encoding_rules:
+        wire_format: "UTF-8 without BOM"
+        powershell_5_1_emission: |
+          [System.IO.File]::WriteAllText(
+            $path, $content, [System.Text.UTF8Encoding]::new($false))
+        powershell_7_emission: "Out-File -Encoding utf8NoBOM"
+        json_round_trip: "unescape with [System.Text.RegularExpressions.Regex]::Unescape before writing"
+
+    validation_checks_added:
+      - "MRP_VC_001 no_legacy_bidi_controls (blocker, 10 pts/occurrence)"
+      - "MRP_VC_002 bare_identifier_in_hebrew_prose (warning, 2 pts/occurrence, capped at 20; framework + acronym allowlist applied)"
+      - "MRP_VC_003 mixed_direction_table_cell (warning, 3 pts/occurrence, capped at 30)"
+      - "MRP_VC_004 no_inline_dir_attribute (warning, 2 pts/occurrence, capped at 20)"
+      - "MRP_VC_005 ascii_quote_in_hebrew_acronym_prose_only (minor, 1 pt/occurrence, capped at 5)"
+      - "MRP_VC_006 code_block_indentation_preserved (warning, 2 pts/occurrence, capped at 20)"
+      - "MRP_VC_007 hebrew_ordered_list_uses_letters (informational, 0 pts)"
+      - "MRP_VC_008 per_language_hedge_phrase_count (warning, 5 pts per missing language, capped at 25)"
+      - "MRP_VC_009 ranges_use_single_atom_with_en_dash (warning, 2 pts/occurrence, capped at 20)"
+      - "MRP_VC_010 front_matter_dir_present_for_bilingual (informational, 0 pts)"
+      - "MRP_VC_011 no_escaped_hebrew_unicode_in_source (blocker, 10 pts/occurrence)"
+      - "MRP_VC_012 mermaid_hebrew_labels_use_foreignobject (warning, 3 pts/occurrence, capped at 15)"
+
+    rendering_target: "Protocols/viewer/viewer.html (canonical preview surface)"
+
+    workflow_integration:
+      - step: 1
+        action: "Read multilingual_rendering_protocol.yaml at session start (Phase 0)"
+      - step: 2
+        action: "Detect documentation_language from DOCUMENTER_PROJECT_CONFIG.yaml"
+      - step: 3
+        action: "If bilingual or non-Latin script: load MRP rules into active context"
+      - step: 4
+        action: "When generating markdown: apply MRP direction_policy + table_conventions"
+      - step: 5
+        action: "When generating markdown: emit YAML front-matter with dir + documentation_language"
+      - step: 6
+        action: "Before writing file: encode as UTF-8 without BOM (per encoding rules)"
+      - step: 7
+        action: "Run MRP_VC_001..MRP_VC_012 as part of /document:validate gate"
+
 ---
 
 # OUTPUT SKILLS (File Generation)
@@ -746,3 +836,12 @@ version_history:
       - "Added 5 Mandatory Behavioral Rules as internal skills (DOC_INT_010 to DOC_INT_014)"
       - "Total internal skills now: 14 (was 8)"
       - "Aligned with agent_specification.md 5-phase workflow and mandatory rules"
+
+  - version: "1.2.0"
+    date: "2026-05-31"
+    changes:
+      - "Added mandatory_shared_protocols block under agent: section, listing anti_hallucination_engine.yaml, validation_framework.yaml, and multilingual_rendering_protocol.yaml as required Phase 0 reads"
+      - "Added DOC_INT_015 multilingual_rendering_compliance internal skill — loads MRP v1.1.0, enforces MRP_001..MRP_007 core principles, 12 validation checks (MRP_VC_001..MRP_VC_012), encoding rules (UTF-8 without BOM), front-matter convention, and identifier density budget"
+      - "Added core_principle: bilingual rendering compliance"
+      - "Total internal skills now: 15 (was 14)"
+      - "Aligned with Protocols/viewer/viewer.html as canonical preview surface"

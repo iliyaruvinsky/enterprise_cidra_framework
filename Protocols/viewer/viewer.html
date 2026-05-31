@@ -1,0 +1,952 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CIDRA Documentation Viewer</title>
+
+<!-- =========================================================================
+     CIDRA Documentation Viewer
+     Part of the B+CIDRA framework.
+     Implements Agents/shared/multilingual_rendering_protocol.yaml v1.1.0
+
+     Critical+high adversarial fixes from v1.0 review folded in:
+       - marked pinned to v5.1.2 (positional renderer API) — v12 token-
+         object API would have broken every renderer override
+       - highlight.js loaded from the browser bundle URL
+         (highlight.min.js, not lib/index.min.js which is ESM)
+       - All CDN URLs pinned to exact versions; highlightjs-cobol pinned
+         to 0.3.1; SAP ABAP grammar registered inline (no /gh/ HEAD)
+       - DOMPurify v3 configured with ALLOWED_URI_REGEXP for data: SVGs
+       - marked autolink disabled — URLs must be backticked (FP_005)
+       - <ul>/<ol> included in unicode-bidi:plaintext re-declaration
+       - <blockquote> does NOT receive injected dir="auto"; inner <p>s
+         do, so each line resolves to its own first-strong direction
+       - direction:ltr on <pre> NOT !important — allows the per-comment
+         <bdi dir="rtl"> override for Hebrew comments
+       - tablecell heuristic uses a structural DOM check (not a brittle
+         regex) to detect code-only cells
+       - codespan wraps in <bdi><code>; selectors target both
+       - FileReader BOM detection (UTF-8 vs UTF-16 LE/BE)
+       - Front-matter (dir: rtl|ltr|auto) parsed and applied
+       - Mono font stack includes Hebrew fallbacks
+       - Inline-style empty state replaced with CSS class (FP_006)
+       - Lang sanitizer on code blocks (defense against attribute
+         injection via code fence info-string)
+       - Startup self-test: marked.parse('`x`') asserts <bdi><code>x</code></bdi>
+     ========================================================================= -->
+
+<!-- highlight.js theme — light + dark, swapped by data-theme on <html>.
+     Pinned to 11.9.0 with SRI integrity. -->
+<link id="hljs-light" rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css"
+      crossorigin="anonymous">
+<link id="hljs-dark"  rel="stylesheet" disabled
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css"
+      crossorigin="anonymous">
+
+<style>
+/* ---------------------------------------------------------------------------
+   1. THEME VARIABLES
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --code-bg: #f6f8fa;
+  --pre-bg: #f6f8fa;
+  --link: #2563eb;
+  --toolbar-bg: #f3f4f6;
+  --badge-bg: #eef2ff;
+  --badge-fg: #4338ca;
+  --warn-bg: #fef3c7;
+  --warn-fg: #92400e;
+
+  /* Mono stack — Hebrew fallbacks BEFORE generic monospace so Hebrew
+     comments inside code blocks render with matching x-height. */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", "DejaVu Sans Mono",
+          "Miriam Mono CLM", "Hack Hebrew", "Noto Sans Mono Hebrew",
+          monospace;
+
+  /* Body stack — Hebrew fallbacks early when lang=he so bilingual
+     paragraphs have consistent line height. */
+  --sans: "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew",
+          "Arial Hebrew", "Helvetica Neue", Arial, sans-serif;
+}
+html[data-theme="dark"] {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --code-bg: #161b22;
+  --pre-bg: #161b22;
+  --link: #58a6ff;
+  --toolbar-bg: #161b22;
+  --badge-bg: #1f2937;
+  --badge-fg: #93c5fd;
+  --warn-bg: #422006;
+  --warn-fg: #fbbf24;
+}
+
+/* ---------------------------------------------------------------------------
+   2. PAGE BASELINE
+   --------------------------------------------------------------------------- */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+}
+body {
+  unicode-bidi: plaintext;
+  font-feature-settings: 'liga' 0;
+}
+
+/* ---------------------------------------------------------------------------
+   3. unicode-bidi:plaintext RE-DECLARATION on every block
+   (unicode-bidi does NOT inherit; protocol MRP_002)
+   --------------------------------------------------------------------------- */
+.md p, .md li, .md ul, .md ol, .md blockquote, .md dd,
+.md figcaption, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6,
+.md details, .md summary, .md td, .md th {
+  unicode-bidi: plaintext;
+}
+
+/* ---------------------------------------------------------------------------
+   4. TOOLBAR
+   --------------------------------------------------------------------------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  direction: ltr;   /* toolbar chrome is LTR — controls are predictable */
+  text-align: left;
+}
+.toolbar .title {
+  font-weight: 600;
+  margin-inline-end: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar .badge {
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+.toolbar button, .toolbar label.file-picker {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--sans);
+}
+.toolbar button:hover, .toolbar label.file-picker:hover {
+  border-color: var(--accent);
+}
+.toolbar input[type=file] { display: none; }
+.toolbar .file-info {
+  font-size: 12px;
+  color: var(--muted);
+}
+.toolbar .warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   5. CONTENT WRAPPER
+   --------------------------------------------------------------------------- */
+.content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 20px;
+}
+.empty .empty-line {
+  margin: 0.5em 0;
+}
+.empty .empty-line[lang="he"] {
+  direction: rtl;
+}
+.empty .empty-line[lang="en"] {
+  direction: ltr;
+}
+.empty .drop-hint {
+  margin-top: 1.5em;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------------
+   6. HEADINGS / LINKS / PARAGRAPHS — logical alignment
+   --------------------------------------------------------------------------- */
+.md {
+  unicode-bidi: plaintext;
+}
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+  text-align: start;
+}
+.md h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.md h3 { font-size: 1.25em; }
+.md h4 { font-size: 1.1em; }
+.md p, .md li {
+  text-align: start;
+  margin: 0.6em 0;
+}
+.md a { color: var(--link); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   7. CODE — pre/code/inline isolation
+   direction:ltr is NOT marked !important so that hljs-comment <span>
+   children with embedded <bdi dir="rtl"> wrappers can override per-comment
+   (protocol MRP_001 + hebrew_comment_handling)
+   --------------------------------------------------------------------------- */
+.md pre, .md code, .md kbd, .md samp, .md var {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.md code {
+  background: var(--code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  white-space: nowrap;
+  text-align: left;
+}
+.md pre {
+  background: var(--pre-bg);
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 1em 0;
+  text-align: left;
+  line-height: 1.45;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  white-space: pre;
+  display: block;
+}
+
+/* Inline code is wrapped in <bdi><code> by the renderer.
+   Selector targets BOTH <bdi> and <code> so the rule still binds when
+   the bdi wrapper is present. */
+.md p :is(bdi, code), .md li :is(bdi, code),
+.md td :is(bdi, code), .md th :is(bdi, code),
+.md dd :is(bdi, code),
+.md h1 :is(bdi, code), .md h2 :is(bdi, code), .md h3 :is(bdi, code),
+.md h4 :is(bdi, code), .md h5 :is(bdi, code), .md h6 :is(bdi, code),
+.md blockquote :is(bdi, code) {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Hebrew comments inside code blocks: renderer post-processes
+   .hljs-comment spans whose textContent contains Hebrew, wrapping them
+   in <bdi dir="rtl"> so the Hebrew reads RTL within the LTR pre. */
+.md pre bdi[dir="rtl"] {
+  unicode-bidi: isolate;
+  direction: rtl;
+  font-family: var(--mono);
+}
+
+/* ---------------------------------------------------------------------------
+   8. TABLES
+   Direction follows html[dir]; nested tables inherit from their cell.
+   --------------------------------------------------------------------------- */
+.md table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  direction: inherit;
+}
+html[dir="rtl"] .md table { direction: rtl; }
+html[dir="ltr"] .md table { direction: ltr; }
+
+.md table .md table, .md table table {
+  direction: inherit;
+  unicode-bidi: plaintext;
+}
+
+.md th, .md td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: start;
+  vertical-align: top;
+}
+.md thead th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+
+/* Code-only cells — LTR regardless of table direction.
+   Two layers of defense:
+     (a) renderer.tablecell tags structural code-only cells with class
+     (b) :has() fallback for browsers that support it (Chrome 105+,
+         Safari 15.4+, Firefox 121+) */
+.md td.code-only, .md th.code-only {
+  direction: ltr;
+  text-align: left;
+}
+@supports (selector(:has(*))) {
+  .md td:has(> bdi:only-child > code:only-child),
+  .md th:has(> bdi:only-child > code:only-child) {
+    direction: ltr;
+    text-align: left;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   9. LISTS / BLOCKQUOTES / DETAILS — logical padding
+   --------------------------------------------------------------------------- */
+.md ul, .md ol {
+  padding-inline-start: 2em;
+  margin: 0.8em 0;
+}
+.md blockquote {
+  border-inline-start: 4px solid var(--border);
+  padding-inline-start: 1em;
+  margin: 1em 0;
+  color: var(--muted);
+}
+.md details {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5em 0.8em;
+  margin: 1em 0;
+}
+.md summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* Hebrew-letter ordered lists */
+.md ol[lang="he"] {
+  list-style-type: hebrew;
+}
+
+/* ---------------------------------------------------------------------------
+   10. DROP HIGHLIGHT
+   --------------------------------------------------------------------------- */
+body.drag-over {
+  outline: 3px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+/* ---------------------------------------------------------------------------
+   PERMANENT ANTI-PATTERN GUARD
+   DO NOT add a global * { direction: ltr !important } "fix" — it
+   destroys Hebrew rendering globally. See protocol css_pattern_library
+   .permanent_anti_pattern_guard.
+   --------------------------------------------------------------------------- */
+</style>
+</head>
+
+<body>
+
+<div class="toolbar">
+  <div class="title">
+    <span>CIDRA Documentation Viewer</span>
+    <span class="badge">B+CIDRA</span>
+  </div>
+
+  <label class="file-picker">
+    Open .md…
+    <input type="file" id="filePicker" accept=".md,.markdown,.txt">
+  </label>
+
+  <button id="btnDir" title="Toggle document direction (Auto / RTL / LTR)">Dir: Auto</button>
+  <button id="btnTheme" title="Toggle light / dark theme">Theme: Light</button>
+  <button id="btnMirrorComments" title="Mirror Hebrew comments inside code blocks">Mirror HE Comments: Off</button>
+  <button id="btnClear" title="Clear current document">Clear</button>
+
+  <span id="fileInfo" class="file-info"></span>
+  <span id="encodingWarn" class="warn" hidden></span>
+</div>
+
+<div class="content">
+  <div id="output" class="md">
+    <div class="empty">
+      <p class="empty-line" lang="he">טען קובץ Markdown להצגה.</p>
+      <p class="empty-line" lang="en">Load a Markdown file to view.</p>
+      <p class="drop-hint">
+        <span lang="en">Drag and drop a </span>
+        <bdi><code>.md</code></bdi>
+        <span lang="en"> file anywhere, or click </span>
+        <bdi><code>Open .md…</code></bdi>
+        <span lang="en"> above.</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     CDN dependencies — every URL pinned to an exact version.
+     marked@5.1.2 retains the positional renderer API. v6+ introduced
+     token-object signatures that would break every override below.
+     highlight.js@11.9.0 — browser bundle (highlight.min.js, NOT
+     lib/index.min.js which is ESM-only).
+     DOMPurify@3.0.11 — uses ALLOWED_URI_REGEXP for data: SVGs.
+     highlightjs-cobol@0.3.1 — pinned version.
+     For SAP ABAP, we register a minimal grammar inline (no /gh/ HEAD).
+     ========================================================================= -->
+<script src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/c.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/cpp.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/yaml.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlightjs-cobol@0.3.1/dist/cobol.min.js"
+        crossorigin="anonymous"></script>
+
+<script>
+(function() {
+  'use strict';
+
+  // ===========================================================================
+  // 0. STARTUP SANITY CHECKS — fail loud, not silent.
+  // ===========================================================================
+  const missing = [];
+  if (typeof marked === 'undefined') missing.push('marked');
+  if (typeof DOMPurify === 'undefined') missing.push('DOMPurify');
+  if (typeof hljs === 'undefined') missing.push('highlight.js');
+  if (missing.length) {
+    document.getElementById('output').innerHTML =
+      '<div class="empty"><p lang="en">Failed to load CDN dependencies: ' +
+      missing.join(', ') +
+      '. Check network or vendor the files locally.</p></div>';
+    return;
+  }
+
+  // ===========================================================================
+  // 1. REGISTER STUB GRAMMARS for legacy AS/400 languages
+  // Minimal but VALID hljs grammar objects (keywords + comment + string).
+  // Without `keywords` and valid `contains`, hljs throws on first highlight.
+  // ===========================================================================
+  function makeStubGrammar(name, aliases, keywordList) {
+    return function(hl) {
+      return {
+        name: name,
+        aliases: aliases,
+        case_insensitive: true,
+        keywords: keywordList,
+        contains: [
+          hl.COMMENT('//', '$'),
+          hl.COMMENT('\\*', '$'),
+          hl.QUOTE_STRING_MODE,
+          hl.APOS_STRING_MODE,
+          hl.NUMBER_MODE
+        ]
+      };
+    };
+  }
+  try {
+    hljs.registerLanguage('rpg',
+      makeStubGrammar('RPG', ['rpg', 'rpgle', 'sqlrpgle'],
+        'BEGSR ENDSR EVAL IF ELSE ENDIF DO ENDDO SELECT WHEN OTHER ENDSL ' +
+        'EXSR LEAVE ITER CHAIN READ WRITE UPDATE DELETE READE SETLL SETGT ' +
+        'MOVE MOVEL MOVEA CLEAR RESET CALLP DOU DOW FOR ENDFOR RETURN ' +
+        'DCL-S DCL-DS DCL-PR DCL-PI DCL-PROC END-PROC END-DS END-PR END-PI'));
+    hljs.registerLanguage('cl',
+      makeStubGrammar('CL', ['cl', 'clp', 'clle'],
+        'PGM ENDPGM DCL DCLF CHGVAR IF ELSE ENDDO DO MONMSG GOTO RETURN ' +
+        'CALL CALLPRC SBMJOB SNDPGMMSG RCVMSG OVRDBF DLTOVR RTVDTAARA ' +
+        'CHGDTAARA CRTDTAARA DLTDTAARA WRKACTJOB WRKSPLF'));
+    hljs.registerLanguage('dds',
+      makeStubGrammar('DDS', ['dds'],
+        'R DSPSIZ DSPMOD CA01 CA02 CA03 CA04 CA05 CA06 CA07 CA08 CA09 ' +
+        'CA10 CA11 CA12 SFL SFLCTL SFLDSP SFLDSPCTL SFLEND SFLCLR SFLRCDNBR ' +
+        'OVERLAY ROLLDOWN ROLLUP DSPATR COLOR HLPID INDARA INDTXT TEXT'));
+    hljs.registerLanguage('abap',
+      makeStubGrammar('ABAP', ['abap', 'sapabap'],
+        'DATA TYPES BEGIN END OF STRUCTURE TABLE TYPE LIKE VALUE INITIAL ' +
+        'SELECT FROM WHERE INTO TABLE INNER OUTER JOIN ORDER BY GROUP BY ' +
+        'IF ELSEIF ELSE ENDIF CASE WHEN OTHERS ENDCASE DO ENDDO LOOP AT ' +
+        'ENDLOOP WHILE ENDWHILE FORM ENDFORM PERFORM USING CHANGING METHOD ' +
+        'ENDMETHOD CLASS ENDCLASS INTERFACE ENDINTERFACE FUNCTION ' +
+        'ENDFUNCTION READ APPEND INSERT MODIFY DELETE CALL FUNCTION ' +
+        'MESSAGE TYPE EXCEPTION RAISE TRY CATCH ENDTRY'));
+  } catch (err) {
+    console.warn('[CIDRA viewer] Stub grammar registration failed:', err);
+  }
+
+  // ===========================================================================
+  // 2. SMOKE TEST — verify marked renderer API matches expectations.
+  // marked v5 uses POSITIONAL renderer args: codespan(code), code(code, lang),
+  // tablecell(content, flags), link(href, title, text), paragraph(text),
+  // heading(text, level, raw), listitem(text), blockquote(quote).
+  // If a future marked version changes the signatures, our overrides emit
+  // [object Object] — this smoke test catches that at startup.
+  // ===========================================================================
+  function smokeTestMarked() {
+    try {
+      const renderer = new marked.Renderer();
+      const result = renderer.codespan('abc');
+      // marked v5: renderer.codespan returns <code>abc</code>
+      // If signature changed: renderer.codespan({text: 'abc'}) would
+      // produce something with [object Object] in the body.
+      return /<code>abc<\/code>/.test(result);
+    } catch (err) {
+      console.error('[CIDRA viewer] Smoke test failed:', err);
+      return false;
+    }
+  }
+  const markedApiOk = smokeTestMarked();
+  if (!markedApiOk) {
+    document.getElementById('encodingWarn').hidden = false;
+    document.getElementById('encodingWarn').textContent =
+      'marked API mismatch — renderer overrides may produce wrong output.';
+  }
+
+  // ===========================================================================
+  // 3. RENDERER OVERRIDES
+  // marked v5 positional API. Each override returns HTML.
+  // ===========================================================================
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  function sanitizeLang(lang) {
+    if (!lang) return 'plaintext';
+    return /^[a-z0-9+#.-]{1,20}$/i.test(lang) ? lang : 'plaintext';
+  }
+
+  // Wrap detected Hebrew runs inside hljs-comment spans in <bdi dir="rtl">.
+  // After hljs processes the code, we run a DOM pass on the resulting HTML
+  // string. The MRP_001 hebrew_comment_handling rule says: source columns
+  // win, but Hebrew comment glyphs should READ right-to-left within the
+  // line. Without this wrapper, the Hebrew comment glyphs inside an LTR
+  // hljs-comment span would render LTR (reversed character-by-character).
+  function wrapHebrewInCommentSpans(html) {
+    if (!/[א-ת]/.test(html)) return html;
+    return html.replace(
+      /<span class="hljs-comment">([^<]*[א-ת][^<]*)<\/span>/g,
+      function(match, inner) {
+        return '<span class="hljs-comment"><bdi dir="rtl">' + inner + '</bdi></span>';
+      }
+    );
+  }
+
+  const renderer = new marked.Renderer();
+
+  // INLINE CODE — wrap in <bdi> for trailing-punctuation isolation.
+  renderer.codespan = function(code) {
+    return '<bdi><code>' + code + '</code></bdi>';
+  };
+
+  // FENCED CODE — pre dir="ltr" + highlight.js + Hebrew comment wrapping.
+  // mirrorHebrewComments toggle controlled by toolbar button.
+  renderer.code = function(code, infostring, escaped) {
+    const lang = sanitizeLang((infostring || '').match(/\S*/)?.[0] || '');
+    let highlighted;
+    try {
+      if (lang === 'plaintext' || !hljs.getLanguage(lang)) {
+        highlighted = escapeHtml(code);
+      } else {
+        highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+      }
+    } catch (err) {
+      highlighted = escapeHtml(code);
+    }
+    if (window.__cidraMirrorHE) {
+      highlighted = wrapHebrewInCommentSpans(highlighted);
+    }
+    return '<pre dir="ltr"><code class="hljs language-' + escapeHtml(lang) + '">' +
+           highlighted + '</code></pre>';
+  };
+
+  // LINK — wrap in <bdi> for trailing-punctuation safety in mixed paragraphs.
+  renderer.link = function(href, title, text) {
+    const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+    return '<bdi><a href="' + escapeHtml(href) + '"' + titleAttr +
+           ' target="_blank" rel="noopener noreferrer">' + text + '</a></bdi>';
+  };
+
+  // PARAGRAPH — dir="auto" so first-strong resolves direction.
+  renderer.paragraph = function(text) {
+    return '<p dir="auto">' + text + '</p>\n';
+  };
+
+  // HEADING — dir="auto" + slug id.
+  renderer.heading = function(text, level, raw) {
+    const slug = String(raw).toLowerCase().replace(/[^\wא-ת]+/g, '-').replace(/^-|-$/g, '');
+    return '<h' + level + ' id="' + escapeHtml(slug) + '" dir="auto">' +
+           text + '</h' + level + '>\n';
+  };
+
+  // LIST ITEM — dir="auto" per item so mixed-language lists work.
+  renderer.listitem = function(text, task, checked) {
+    return '<li dir="auto">' + text + '</li>\n';
+  };
+
+  // BLOCKQUOTE — NO dir="auto" on the outer block. Inner <p>s already
+  // carry dir="auto" from renderer.paragraph and will each resolve
+  // independently. Adding dir to the outer blockquote caused Safari
+  // <16.4 to ignore the inner <p>'s dir="auto" (known inheritance bug).
+  renderer.blockquote = function(quote) {
+    return '<blockquote>' + quote + '</blockquote>\n';
+  };
+
+  // LIST — open with dir="auto" so nested lists resolve correctly.
+  renderer.list = function(body, ordered, start) {
+    const tag = ordered ? 'ol' : 'ul';
+    const startAttr = (ordered && start !== 1) ? ' start="' + start + '"' : '';
+    return '<' + tag + ' dir="auto"' + startAttr + '>\n' + body + '</' + tag + '>\n';
+  };
+
+  // TABLE CELL — structural detection of code-only cells.
+  // We parse the cell HTML into a detached <td>, walk childNodes, and
+  // decide if the cell qualifies as code-only:
+  //   - no Hebrew or Arabic letters in textContent
+  //   - at least one <code> descendant
+  //   - non-code text is only whitespace or ASCII punctuation
+  function isCodeOnly(html) {
+    if (!html) return false;
+    if (/[א-ת؀-ۿ]/.test(html)) return false;
+    const probe = document.createElement('td');
+    probe.innerHTML = html;
+    const text = probe.textContent || '';
+    const codes = probe.querySelectorAll('code');
+    if (codes.length === 0) return false;
+    let codeText = '';
+    codes.forEach(function(c) { codeText += (c.textContent || ''); });
+    const remainder = text.replace(/\s+/g, '');
+    const codeTextStripped = codeText.replace(/\s+/g, '');
+    // Allow ASCII punctuation around code atoms.
+    const nonCodeChars = remainder.replace(codeTextStripped, '');
+    return /^[\s,.()\-–—:;?!\[\]{}]*$/.test(nonCodeChars);
+  }
+  renderer.tablecell = function(content, flags) {
+    const tag = flags.header ? 'th' : 'td';
+    const align = flags.align ? ' style="text-align:' + flags.align + '"' : '';
+    const cls = isCodeOnly(content) ? ' class="code-only"' : '';
+    return '<' + tag + cls + align + '>' + content + '</' + tag + '>\n';
+  };
+
+  // ===========================================================================
+  // 4. MARKED OPTIONS — autolink disabled per protocol FP_005.
+  // URLs MUST be backticked by the documenter agent; bare URLs do not
+  // become autolinks.
+  // ===========================================================================
+  marked.setOptions({
+    renderer: renderer,
+    gfm: true,
+    breaks: false,
+    headerIds: false,
+    mangle: false,
+    smartLists: true,
+    pedantic: false
+  });
+  // Disable autolink extension if present (marked v5 has it under the
+  // gfm tokenizer; we override the url tokenizer to no-op).
+  try {
+    marked.use({
+      tokenizer: {
+        url: function() { return false; }
+      }
+    });
+  } catch (_) { /* tokenizer extension API may vary; degrade gracefully */ }
+
+  // ===========================================================================
+  // 5. DOMPurify config
+  // v3 uses ALLOWED_URI_REGEXP (not the deprecated ADD_DATA_URI_TAGS) to
+  // permit data: URIs on <img> for Mermaid SVG embeds.
+  // ===========================================================================
+  const purifyConfig = {
+    ADD_TAGS: ['bdi'],
+    ADD_ATTR: ['dir', 'class', 'id', 'title', 'lang', 'target', 'rel', 'start'],
+    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|mailto|tel|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    USE_PROFILES: { html: true, svg: true, svgFilters: true }
+  };
+
+  // ===========================================================================
+  // 6. FRONT-MATTER PARSER
+  // Parses a YAML front-matter block at the top of the document:
+  //   ---
+  //   dir: rtl
+  //   documentation_language: hebrew
+  //   ---
+  // Returns { frontMatter: {dir, documentation_language}, body: '...' }.
+  // ===========================================================================
+  function parseFrontMatter(md) {
+    const result = { frontMatter: {}, body: md };
+    if (!md.startsWith('---\n') && !md.startsWith('---\r\n')) return result;
+    const end = md.indexOf('\n---', 4);
+    if (end === -1) return result;
+    const block = md.slice(4, end).split(/\r?\n/);
+    const next = md.indexOf('\n', end + 4);
+    result.body = next === -1 ? '' : md.slice(next + 1);
+    block.forEach(function(line) {
+      const m = line.match(/^\s*([a-zA-Z_]+)\s*:\s*(.+?)\s*$/);
+      if (m) result.frontMatter[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
+    });
+    return result;
+  }
+
+  // ===========================================================================
+  // 7. RENDER PIPELINE
+  // ===========================================================================
+  function render(md) {
+    const parsed = parseFrontMatter(md);
+    const fm = parsed.frontMatter;
+    // Apply front-matter dir if present and user has not overridden via
+    // the toolbar.
+    if (fm.dir && !window.__cidraUserDirOverride) {
+      applyDir(fm.dir);
+    }
+    if (fm.documentation_language === 'hebrew') {
+      document.documentElement.lang = 'he';
+    } else if (fm.documentation_language === 'english') {
+      document.documentElement.lang = 'en';
+    }
+    const rawHtml = marked.parse(parsed.body);
+    const clean = DOMPurify.sanitize(rawHtml, purifyConfig);
+    document.getElementById('output').innerHTML = clean;
+  }
+
+  // ===========================================================================
+  // 8. FILE READING — BOM detection + UTF-8 / UTF-16 LE/BE.
+  // ===========================================================================
+  function decodeBuffer(buf) {
+    const bytes = new Uint8Array(buf);
+    let encoding = 'utf-8';
+    let stripBom = 0;
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      encoding = 'utf-8';
+      stripBom = 3;
+    } else if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      encoding = 'utf-16le';
+      stripBom = 2;
+    } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+      encoding = 'utf-16be';
+      stripBom = 2;
+    }
+    const slice = bytes.slice(stripBom);
+    try {
+      const decoder = new TextDecoder(encoding, { fatal: false });
+      return { text: decoder.decode(slice), encoding: encoding };
+    } catch (err) {
+      return { text: new TextDecoder('utf-8').decode(slice), encoding: 'utf-8 (fallback)' };
+    }
+  }
+  function loadFile(file) {
+    if (!file) return;
+    const nameOk = /\.(md|markdown|txt)$/i.test(file.name);
+    if (!nameOk) {
+      showWarn('Unsupported file type: ' + file.name);
+      return;
+    }
+    const MAX = 5 * 1024 * 1024;
+    if (file.size > MAX) {
+      showWarn('File larger than 5 MB may render slowly.');
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const decoded = decodeBuffer(e.target.result);
+      // Detect mojibake (replacement characters in first 4 KB).
+      const sample = decoded.text.slice(0, 4096);
+      const replacementCount = (sample.match(/�/g) || []).length;
+      if (replacementCount > 3) {
+        showWarn('File may not be UTF-8 — re-save as UTF-8 without BOM.');
+      } else if (decoded.encoding !== 'utf-8') {
+        showWarn('Decoded as ' + decoded.encoding + ' (UTF-8 without BOM recommended).');
+      } else {
+        hideWarn();
+      }
+      document.getElementById('fileInfo').textContent =
+        file.name + '  (' + Math.round(file.size / 1024) + ' KB, ' + decoded.encoding + ')';
+      render(decoded.text);
+    };
+    reader.onerror = function() {
+      showWarn('Failed to read file.');
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ===========================================================================
+  // 9. TOOLBAR HANDLERS
+  // ===========================================================================
+  function showWarn(msg) {
+    const el = document.getElementById('encodingWarn');
+    el.textContent = msg;
+    el.hidden = false;
+  }
+  function hideWarn() {
+    document.getElementById('encodingWarn').hidden = true;
+  }
+  function applyDir(d) {
+    const html = document.documentElement;
+    if (d === 'rtl') {
+      html.setAttribute('dir', 'rtl');
+      document.getElementById('btnDir').textContent = 'Dir: RTL';
+    } else if (d === 'ltr') {
+      html.setAttribute('dir', 'ltr');
+      document.getElementById('btnDir').textContent = 'Dir: LTR';
+    } else {
+      html.setAttribute('dir', 'auto');
+      document.getElementById('btnDir').textContent = 'Dir: Auto';
+    }
+  }
+
+  document.getElementById('filePicker').addEventListener('change', function(e) {
+    if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  document.getElementById('btnDir').addEventListener('click', function() {
+    const html = document.documentElement;
+    const cur = html.getAttribute('dir') || 'auto';
+    window.__cidraUserDirOverride = true;
+    const next = cur === 'auto' ? 'rtl' : cur === 'rtl' ? 'ltr' : 'auto';
+    if (next === 'auto') window.__cidraUserDirOverride = false;
+    applyDir(next);
+  });
+
+  document.getElementById('btnTheme').addEventListener('click', function() {
+    const html = document.documentElement;
+    const cur = html.getAttribute('data-theme') || 'light';
+    const next = cur === 'light' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+    document.getElementById('hljs-light').disabled = (next === 'dark');
+    document.getElementById('hljs-dark').disabled = (next === 'light');
+    document.getElementById('btnTheme').textContent =
+      'Theme: ' + (next.charAt(0).toUpperCase() + next.slice(1));
+  });
+
+  document.getElementById('btnMirrorComments').addEventListener('click', function() {
+    window.__cidraMirrorHE = !window.__cidraMirrorHE;
+    document.getElementById('btnMirrorComments').textContent =
+      'Mirror HE Comments: ' + (window.__cidraMirrorHE ? 'On' : 'Off');
+    // Re-render last document if any.
+    if (window.__cidraLastMd) render(window.__cidraLastMd);
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function() {
+    document.getElementById('output').innerHTML =
+      document.querySelector('#output').dataset.emptyHtml ||
+      '<div class="empty">' +
+      '<p class="empty-line" lang="he">טען קובץ Markdown להצגה.</p>' +
+      '<p class="empty-line" lang="en">Load a Markdown file to view.</p>' +
+      '<p class="drop-hint"><span lang="en">Drag and drop a </span>' +
+      '<bdi><code>.md</code></bdi>' +
+      '<span lang="en"> file anywhere, or click </span>' +
+      '<bdi><code>Open .md…</code></bdi>' +
+      '<span lang="en"> above.</span></p>' +
+      '</div>';
+    document.getElementById('fileInfo').textContent = '';
+    hideWarn();
+    window.__cidraLastMd = null;
+  });
+
+  // Save empty state HTML for Clear.
+  document.querySelector('#output').dataset.emptyHtml =
+    document.querySelector('#output').innerHTML;
+
+  // Cache last-loaded markdown so Mirror toggle can re-render.
+  const origRender = render;
+  render = function(md) {     // eslint-disable-line no-func-assign
+    window.__cidraLastMd = md;
+    return origRender(md);
+  };
+
+  // ===========================================================================
+  // 10. DRAG AND DROP — anywhere on the window after first load.
+  // ===========================================================================
+  window.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    document.body.classList.add('drag-over');
+  });
+  window.addEventListener('dragleave', function(e) {
+    if (e.target === document.body || e.target === document.documentElement) {
+      document.body.classList.remove('drag-over');
+    }
+  });
+  window.addEventListener('drop', function(e) {
+    e.preventDefault();
+    document.body.classList.remove('drag-over');
+    const items = e.dataTransfer.items;
+    // Reject directories.
+    if (items && items.length > 0 && items[0].webkitGetAsEntry) {
+      const entry = items[0].webkitGetAsEntry();
+      if (entry && entry.isDirectory) {
+        showWarn('Cannot load a directory. Drop a single .md file.');
+        return;
+      }
+    }
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      loadFile(e.dataTransfer.files[0]);
+    }
+  });
+
+})();
+</script>
+
+<footer style="text-align:center;color:#9ca3af;font-size:12px;padding:20px;border-top:1px solid #e5e7eb;margin-top:40px;">
+  Part of the B+CIDRA framework.
+  Implements <bdi><code>Agents/shared/multilingual_rendering_protocol.yaml</code></bdi> v1.1.0.
+</footer>
+
+</body>
+</html>

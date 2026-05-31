@@ -1,0 +1,1218 @@
+# =============================================================================
+# CIDRA Shared Protocol: Multilingual Rendering
+# =============================================================================
+# Path:  Agents/shared/multilingual_rendering_protocol.yaml
+# Peers: anti_hallucination_engine.yaml, validation_framework.yaml
+# =============================================================================
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The CIDRA framework already specifies *which* language documentation may use
+# (documentation_language in DOCUMENTER_PROJECT_CONFIG.yaml) and *which words*
+# to prefer or forbid (DOC_INT_005, DOC_INT_006). It does NOT specify *how* to
+# physically lay out two languages on the same page when one is RTL (Hebrew,
+# Arabic) and the other is LTR (English identifiers, code, numbers).
+#
+# Without this protocol, agents reinvent ad-hoc mixing patterns every project:
+# inline parenthetical glosses, doubled hedge phrases, mixed-direction table
+# cells, neutrals (".", ",", "(", ")") landing on the wrong side of identifiers,
+# trailing periods migrating across lines, line ranges visually reversing.
+#
+# This protocol defines a single deterministic rendering contract that any
+# CIDRA agent producing markdown, YAML, or HTML must honor.
+#
+# v1.1.0 folds in adversarial review findings from the v1.0 draft against
+# the RK1_PHARMACY_JOURNAL corpus (typography correctness, implementation
+# feasibility, edge cases). See version_history at end of file.
+# =============================================================================
+
+name: "multilingual_rendering_protocol"
+version: "1.1.0"
+status: "current"
+description: |
+  Deterministic rules for laying out bilingual (RTL + LTR) documentation
+  produced by CIDRA agents. Covers prose direction, code, identifiers,
+  numbers, ranges, tables, lists, headings, punctuation at direction
+  boundaries, and the narrow cases where Unicode bidi control marks are
+  warranted.
+mission: |
+  Every bilingual artifact produced by CIDRA renders identically and
+  unambiguously across GitHub, VS Code preview, the CIDRA viewer
+  (Protocols/viewer/viewer.html), and any HTML pipeline that respects
+  UAX #9 and W3C BiDi guidance — without per-document hand-tuning.
+applies_to: "all_agents_producing_markdown_yaml_or_html"
+
+# -----------------------------------------------------------------------------
+# CORE PRINCIPLES — non-negotiable
+# -----------------------------------------------------------------------------
+core_principles:
+
+  - id: "MRP_001"
+    name: "code_is_always_ltr"
+    rule: |
+      Code — fenced blocks, inline backticks, identifiers, file paths,
+      URLs, numeric literals copied from source — is ALWAYS rendered
+      left-to-right in a monospace font, regardless of the surrounding
+      paragraph direction. Hebrew comments INSIDE a code block stay on
+      the line where the source author placed them; the LTR context is
+      preserved so column-7 COBOL semantics and indentation hold.
+      Hebrew readers see Hebrew comment glyphs in RTL visual order
+      within the line, but the line itself is anchored LTR.
+    rationale: |
+      Source code is a deterministic artifact whose column positions and
+      indentation carry meaning (COBOL columns 7/8/12/72, Python indent,
+      RPG positional specs). Reflowing or mirroring code corrupts those
+      semantics. UAX #9 handles intra-line RTL runs correctly when the
+      base direction is LTR.
+
+  - id: "MRP_002"
+    name: "explicit_paragraph_direction"
+    rule: |
+      Every block-level element renders with an explicit direction
+      resolution policy. Authors choose ONE of two regimes per project
+      and apply it consistently:
+        (a) "auto-resolve": every block carries dir="auto" so the first
+            strong character decides — best when the document mixes
+            Hebrew-primary and English-primary paragraphs roughly
+            equally.
+        (b) "primary-language": the document's documentation_language
+            determines a fixed dir="rtl" or dir="ltr" on every block,
+            and individual atoms (identifiers, code) are isolated.
+      The choice is recorded in front-matter (see direction_policy below)
+      so the viewer and downstream tools render identically.
+    rationale: |
+      CSS unicode-bidi:plaintext on a parent does NOT change the box
+      alignment of the parent; it only affects how the bidi algorithm
+      runs inside the box. A Hebrew-first paragraph with a parent box
+      whose text-align resolves to "left" still hugs the left margin.
+      Authors must therefore set direction at the block level explicitly
+      rather than relying on CSS alone.
+
+  - id: "MRP_003"
+    name: "identifier_isolation"
+    rule: |
+      Every English identifier appearing inline in Hebrew (or Arabic)
+      prose is wrapped in backticks in the source markdown. The renderer
+      converts inline backticks to <bdi><code>…</code></bdi>, providing
+      both BiDi isolation (the <bdi> element) and LTR direction
+      enforcement (CSS on <code>). This is the belt-and-suspenders
+      defense; either layer alone is insufficient under certain CSS
+      resets or older user-agent sheets.
+    density_budget: |
+      No more than 25% of running prose characters (excluding fenced
+      code blocks) may sit inside backticks. If a paragraph reaches the
+      budget, restructure: break into two paragraphs, table-ize the
+      identifier list, or use a definition list. The "sea of backticks"
+      anti-pattern is itself a typography failure.
+    consistency_rule: |
+      Within a single document, an identifier is EITHER always or NEVER
+      backticked — even where the surrounding language flips. Pick one
+      treatment per identifier and apply uniformly.
+
+  - id: "MRP_004"
+    name: "no_mixed_direction_table_cells"
+    rule: |
+      A table cell holds content in ONE direction. Cells containing only
+      identifiers / code / numbers are LTR. Cells containing prose in a
+      single language are that language's direction. Cells that would
+      mix languages are restructured: split into two cells, or hoist
+      the gloss into a footnote / parenthetical in the adjacent cell.
+    rationale: |
+      Mixed-direction cells force per-cell unicode-bidi:plaintext, which
+      then loses the column-level direction policy and produces
+      neighboring cells that visually disagree about which side of the
+      cell is "start".
+
+  - id: "MRP_005"
+    name: "no_legacy_bidi_controls"
+    rule: |
+      The U+202A LRE, U+202B RLE, U+202C PDF, U+202D LRO, U+202E RLO
+      characters MUST NOT appear in any agent-authored artifact. They
+      are formally deprecated by UAX #9 and were the vector for the
+      "Trojan Source" attack (CVE-2021-42574). Modern equivalents are
+      the isolates: U+2066 LRI, U+2067 RLI, U+2068 FSI, U+2069 PDI —
+      and the marks U+200E LRM, U+200F RLM are still acceptable.
+      Markup-over-controls is the strong preference: prefer <bdi>,
+      dir="auto", or explicit dir="ltr"/dir="rtl" over invisible
+      control codepoints.
+
+  - id: "MRP_006"
+    name: "markup_over_controls"
+    rule: |
+      When BiDi control is required in HTML/Markdown that renders to
+      HTML, use markup (<bdi>, <span dir="ltr">, dir attribute) rather
+      than invisible control characters. Controls are reserved for
+      plain-text artifacts (.txt outputs, log files, CSV cells) where
+      no markup layer exists. In .md and .yaml authored by CIDRA agents,
+      controls are forbidden by MRP_005.
+
+  - id: "MRP_007"
+    name: "careful_language_per_language"
+    rule: |
+      DOC_INT_005 mandates careful-language hedge phrases ("appears to",
+      "according to code", "נראה ש", "לפי הקוד") with a minimum of 5
+      occurrences per document. For bilingual documents, the count is
+      PER LANGUAGE — five Hebrew hedges AND five English hedges, not
+      five total. A Hebrew-primary document with only one Hebrew hedge
+      and four English hedges fails this rule. See MRP_VC_008 for the
+      counting algorithm and per-language phrase lists.
+
+# -----------------------------------------------------------------------------
+# DIRECTION POLICY — by content kind
+# -----------------------------------------------------------------------------
+direction_policy:
+
+  # Front-matter convention (NEW in v1.1.0):
+  # Every CIDRA-authored .md file MAY open with a YAML front-matter block:
+  #
+  #   ---
+  #   dir: rtl              # "rtl" | "ltr" | "auto"
+  #   documentation_language: hebrew
+  #   ---
+  #
+  # The viewer (Protocols/viewer/viewer.html) parses this front-matter to
+  # set html[dir] before rendering. Tools that ignore the front-matter
+  # fall back to first-strong heuristic, which is the default UAX #9
+  # behavior.
+  front_matter:
+    required_for: "bilingual_documents"
+    keys:
+      - name: "dir"
+        values: ["rtl", "ltr", "auto"]
+        default_when_absent: "auto"
+      - name: "documentation_language"
+        values: ["hebrew", "english", "bilingual"]
+
+  hebrew_prose:
+    direction: "rtl"
+    text_align: |
+      Under primary-language regime: text-align resolves from html[dir],
+      so a Hebrew paragraph in a Hebrew-primary doc right-aligns
+      automatically. Under auto-resolve regime: text-align: start works
+      ONLY IF the block also carries dir="auto" — pure unicode-bidi:
+      plaintext does NOT influence text-align. Renderer overrides MUST
+      inject dir="auto" on every block element when auto-resolve is in
+      effect.
+    unicode_bidi: "plaintext (only as defense, not as primary mechanism)"
+    example: |
+      תוכנית `RK0041C776` קוראת מקובץ `CUSPF` ומבצעת `SELECT … WHERE
+      CUST_ID = :ws-id`. נראה כי הלוגיקה מקפיצה חריגה כאשר השדה ריק.
+    notes: |
+      Identifiers appear inline backticked. Trailing period sits on the
+      Hebrew side because the period is BiDi class CS adjacent to a
+      strong-RTL run.
+
+  english_prose:
+    direction: "ltr"
+    text_align: |
+      See hebrew_prose.text_align — same caveat applies in reverse.
+      Under auto-resolve, English paragraphs receive dir="auto" and
+      first-strong=L resolves to LTR.
+    unicode_bidi: "plaintext (only as defense)"
+    example: |
+      The program `RK0041C776` reads `CUSPF` and runs `SELECT … WHERE
+      CUST_ID = :ws-id`. According to the code, this raises an
+      exception when the field is empty.
+
+  code_blocks:
+    direction: "ltr"
+    direction_enforcement: |
+      Fenced code blocks render <pre dir="ltr"> with unicode-bidi:
+      isolate. The CSS direction:ltr declaration is NOT marked
+      !important — this allows nested <span class="hljs-comment">
+      generated by highlight.js to receive an inline override when a
+      Hebrew comment is detected (see hebrew_comment_handling). Forcing
+      !important on the entire <pre> prevented the comment-level
+      override and left Hebrew comments anchored to the wrong edge.
+    font_family: |
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", "DejaVu Sans Mono",
+      "Miriam Mono CLM", "Hack Hebrew", "Noto Sans Mono Hebrew",
+      monospace
+      — Hebrew monospace fallbacks appear before generic "monospace"
+      so Hebrew comments in code blocks render with matching x-height
+      and baseline.
+    text_align: "left (logical)"
+    line_numbers: "preserve column positions exactly"
+    hebrew_comment_handling: |
+      A Hebrew-only comment line inside an LTR pre will anchor to where
+      the source author placed it. In COBOL, the leading column-7
+      asterisk stays at column 7 (left edge of the source pane), and the
+      Hebrew glyphs read right-to-left occupying space to the right of
+      the asterisk. This matches the developer's keystroke order but
+      differs from how some Hebrew-aware terminals (column-mirrored)
+      display the line. The renderer wraps detected hljs-comment spans
+      whose textContent contains Hebrew characters in <bdi dir="rtl">,
+      so the comment glyphs render in their natural RTL order WITHOUT
+      relocating the asterisk. This is the explicit trade-off the
+      protocol commits to: source-column-fidelity over comment-anchor
+      mirroring. Authors who require comment mirroring use the viewer's
+      "Mirror Hebrew comments" toggle, which is documented as a
+      view-time preference, not a source transformation.
+    example_with_hebrew_comment: |
+      ```cobol
+            * תיקון 2024: התעלם משדה כאשר ריק
+            MOVE WS-CUST-ID TO WS-OUT.
+            IF WS-CUST-ID = SPACES
+               MOVE 'X' TO WS-FLAG.   * סימון רשומה חסרה
+            END-IF.
+      ```
+
+  identifiers_in_prose:
+    direction: "ltr (within an RTL or LTR paragraph)"
+    isolation_mechanism: |
+      Markdown source: `RK0041C776`
+      Rendered HTML:   <bdi><code>RK0041C776</code></bdi>
+      Both <bdi> and <code> are isolating elements; <bdi> provides BiDi
+      isolation per HTML5, <code> receives CSS direction:ltr and
+      unicode-bidi:isolate via the viewer stylesheet.
+    examples:
+      - "התוכנית `RK0041C776` מטפלת ברכישה."
+      - "Program `RK0041C776` handles purchase."
+
+  numbers:
+    plain_numbers_in_prose:
+      treatment: "no backticks needed for plain digits inside prose"
+      example: "המערכת מטפלת ב-1,500 רשומות ביום."
+      caveat: |
+        The hyphen "מ-" before a number is a Hebrew prefix attached by
+        maqaf; it stays on the Hebrew side. The number 1,500 reads LTR
+        as part of its own run. The comma is BiDi class CS adjacent
+        to digits — it stays inside the number.
+
+    multi_value_lists:
+      rule: |
+        When listing several numeric atoms separated by commas inside
+        Hebrew prose, wrap EACH atom in backticks. The commas are
+        prose commas (Hebrew side); the numbers are LTR atoms.
+      example: |
+        קודי החזרה אפשריים: `200`, `404`, `500` — כולם מטופלים בשגרה
+        `HANDLE-RC`.
+      anti_example: |
+        BAD: קודי החזרה אפשריים: 200, 404, 500
+        Why: under RTL paragraph direction, the unbacktiked numbers
+        form one mixed run with the commas as Common Separators
+        adjacent to digits; UAX #9 may resolve the visual order as
+        "500, 404, 200" depending on surrounding strong characters.
+
+    ranges_and_compound_numbers:    # NEW in v1.1.0
+      rule: |
+        A line range, page range, or any numeric range is ONE atom.
+        Wrap the entire range in a single backtick span and prefer
+        en-dash (U+2013) over hyphen-minus (U+002D) inside the range,
+        because U+002D is BiDi class ES (European Separator) and
+        attaches asymmetrically to flanking digits under RTL paragraph
+        direction.
+      example_correct: |
+        התוכנית בסעיף `MAINLINE_SECTION` (שורות `4105–5957`) מטפלת
+        בפקודה `1.4.4`.
+      example_incorrect: |
+        BAD: שורות `4,105`-`5,957`
+        Why: two separate backtick atoms with a bare hyphen between
+        them in RTL prose; the visual order becomes "5,957-4,105" and
+        the thousands separator commas may also reorder relative to
+        the digits.
+      thousands_separator_clarification: |
+        Inside a single number, the comma is a thousands separator
+        (4,105) and stays inside the LTR atom. Between numbers in a
+        list, the comma is a prose separator (Hebrew side). The atom
+        boundary is what distinguishes the two — backticks make the
+        boundary visible to the renderer.
+
+    file_paths_and_URLs:
+      rule: |
+        Always backticked. Marked.js autolinking is DISABLED in the
+        CIDRA viewer (marked.setOptions({ ..., gfm: true,
+        autolink: false }, see viewer.html) so the documenter agent
+        cannot accidentally emit a bare URL that bypasses the
+        backtick-wrap rule.
+      examples:
+        - "`C:\\My_AI\\enterprise_cidra_framework\\Agents\\shared\\multilingual_rendering_protocol.yaml`"
+        - "`https://example.co.il/api/v2/customers?lang=he`"
+      hebrew_in_url_caveat: |
+        A URL whose query string contains Hebrew characters renders
+        inside the backtick span as a mixed LTR-RTL atom; the inner
+        Hebrew run reads RTL while the scheme and host stay LTR. The
+        <bdi> wrapper isolates the trailing punctuation from the URL.
+
+  currency_and_units:
+    rule: |
+      Hebrew currency abbreviations (ש״ח) and unit suffixes (₪, %, °C)
+      stay on the Hebrew side of the boundary. Numeric amount is an LTR
+      atom; the currency symbol is BiDi class ET (European Terminator)
+      and binds to its number naturally.
+    example: |
+      התשלום הוא `1,500` ש״ח.
+
+# -----------------------------------------------------------------------------
+# TABLE CONVENTIONS
+# -----------------------------------------------------------------------------
+table_conventions:
+
+  base_direction: |
+    The table's direction follows the document's primary direction (set
+    via front-matter dir: key). Hebrew-primary docs render tables RTL —
+    the leftmost column in the source markdown becomes the RIGHTMOST
+    column visually. English-primary docs render LTR. Authors order
+    columns according to their primary language reading order.
+
+  code_only_cells:
+    rule: |
+      A cell whose content is purely identifier(s), code, or number(s)
+      — with no prose words — renders LTR REGARDLESS of the surrounding
+      table direction. The renderer detects code-only cells structurally
+      (textContent equals concatenated textContent of inline code
+      children, plus only whitespace and ASCII punctuation, with at
+      least one <code> child and zero Hebrew characters) and tags them
+      class="code-only" for per-cell LTR styling. The CSS uses both the
+      explicit class AND a :has(> code:only-child) fallback for
+      defense-in-depth.
+    detection_algorithm: |
+      1. Parse cell HTML into a temporary container.
+      2. Compute cell.textContent normalised (collapse whitespace).
+      3. Compute concatenation of textContent across descendant <code>
+         elements.
+      4. Allow non-code text to be only whitespace, commas, periods,
+         hyphens, en-dashes, parentheses (ASCII punctuation).
+      5. Require zero Hebrew/Arabic characters in cell.textContent.
+      6. Require at least one <code> descendant.
+      7. If all checks pass: tag with class="code-only".
+
+  example_three_column_table:
+    markdown: |
+      | שדה COBOL | טיפוס PIC | שדה SAP |
+      |-----------|-----------|---------|
+      | `WS-CUSTOMER-ID` | `PIC X(10)` | `KUNNR` |
+      | `WS-AMOUNT`      | `PIC 9(7)V2`| `WRBTR` |
+    rendering_under_hebrew_primary: |
+      Visually, the rightmost column is "שדה COBOL", the middle column
+      is "טיפוס PIC", the leftmost column is "שדה SAP". Each cell's
+      backticked content renders LTR within the cell.
+
+  numeric_list_cells:
+    rule: |
+      Cells containing comma-separated numbers (e.g., HTTP codes) MUST
+      backtick each number AND the cell qualifies as code-only under
+      the detection algorithm — so it renders LTR regardless of table
+      direction. Without backticking, the cell would inherit RTL table
+      direction and the visual order of numbers could reverse.
+    example: |
+      | קודי תגובה | `200`, `404`, `500` |
+
+  nested_tables:
+    rule: |
+      Nested tables are discouraged. If unavoidable, the inner table
+      inherits the OUTER cell's resolved direction (via CSS rule
+      .md table .md table { direction:inherit; unicode-bidi:plaintext }),
+      not the document direction. Authors prefer to restructure as
+      adjacent tables with a heading.
+
+# -----------------------------------------------------------------------------
+# LIST CONVENTIONS
+# -----------------------------------------------------------------------------
+list_conventions:
+
+  bullet_alignment: |
+    Bullet markers (• or -) align with the start edge of the list —
+    right edge under RTL, left edge under LTR. CSS uses logical
+    padding-inline-start so the toggle works without re-styling.
+
+  list_item_direction: |
+    Each <li> receives dir="auto" via renderer override. Mixed-language
+    lists (a Hebrew bullet, an English bullet, a Hebrew bullet) render
+    each item in its first-strong direction without inheriting the
+    sibling's resolution.
+
+  nested_lists: |
+    Both <ul> and <ol> elements are included in the per-block
+    unicode-bidi:plaintext re-declaration. The renderer also injects
+    dir="auto" on <ul> and <ol> openings, so a nested list inside a
+    language-flipped parent <li> resolves to its own first-strong
+    direction. Without this, nested lists silently inherited document
+    root direction and produced zigzag bullet alignment across nesting
+    levels.
+
+  hebrew_letter_ordered_lists:
+    rule: |
+      Ordered lists may use Hebrew letters (א, ב, ג, ...) instead of
+      Latin numerals. Markdown source uses Hebrew letter + period +
+      space at line start. CSS list-style-type: hebrew is applied to
+      <ol lang="he">.
+    example: |
+      א. שלב ראשון
+      ב. שלב שני
+      ג. שלב שלישי
+
+# -----------------------------------------------------------------------------
+# HEADING CONVENTIONS
+# -----------------------------------------------------------------------------
+heading_conventions:
+
+  primary_language_heading: |
+    A heading in the document's primary language is unadorned:
+      ## תוכנית רוקחות יומנית
+      ## Pharmacy Daily Journal Program
+
+  bilingual_heading_allowed_formats:
+    description: |
+      TWO permitted forms for bilingual headings, depending on whether
+      the relationship is linguistic equivalence or subtitle. Choose
+      ONE form per document and apply uniformly.
+    form_1_colon_subtitle:
+      pattern: "## <Hebrew title>: <bdi><English subtitle></bdi>"
+      example: "## תוכנית `RK0041C776`: Pharmacy Daily Journal"
+      rationale: |
+        Colon (U+003A) is BiDi class CS (Common Separator) and is the
+        most predictable boundary character in mixed-direction context.
+        The English subtitle is explicitly wrapped in <bdi> (the
+        markdown source uses HTML inline) so the renderer isolates it.
+        This is the RECOMMENDED form for Hebrew-primary documents
+        because the colon anchors visually to the Hebrew side.
+    form_2_separate_headings:
+      pattern: |
+        ## <Hebrew title>
+        ### *<English equivalent>*
+      example: |
+        ## תוכנית RK0041C776
+        ### *Pharmacy Daily Journal*
+      rationale: |
+        When the two titles are full linguistic equivalents (not
+        subtitle + main), use two adjacent headings. The English one
+        is one level deeper and italicized to mark the equivalence
+        relationship.
+    em_dash_form_deprecated_in_v1_1: |
+      v1.0 of this protocol recommended an em-dash separator:
+        ## תוכנית `RK0041C776` — Pharmacy Daily Journal
+      Adversarial review found that under RTL paragraph direction the
+      em-dash visually sits at the right edge of the English title,
+      NOT between the two language atoms as the author intended. The
+      em-dash form is now DEPRECATED. Existing documents may keep it
+      but new headings use form_1 or form_2.
+
+  forbidden_heading_patterns:
+    - pattern: "slash separator"
+      example: "## תוכנית / Program"
+      reason: "slash is ambiguous as bidi-neutral; visual position unreliable"
+    - pattern: "pipe separator"
+      example: "## תוכנית | Program"
+      reason: "pipe used in markdown table syntax; semantic collision"
+    - pattern: "hyphen separator"
+      example: "## תוכנית - Program"
+      reason: "hyphen-minus is BiDi class ES; attaches to adjacent digits unpredictably"
+
+# -----------------------------------------------------------------------------
+# PUNCTUATION AT DIRECTION BOUNDARIES
+# -----------------------------------------------------------------------------
+punctuation_at_boundaries:
+
+  parentheses:
+    rule: |
+      Parentheses in Hebrew prose stay on the Hebrew side. The
+      identifier or English phrase inside is backticked or wrapped in
+      <bdi>. The parentheses themselves are BiDi class ON (Other
+      Neutral); inside a strong-RTL run they invert visually (the open
+      paren glyph "(" displays as ")") which is correct Hebrew
+      typography.
+    example: |
+      התוכנית (`RK0041C776`) נכשלת.
+    rendered_visual: |
+      ".נכשלת (`RK0041C776`) תוכניתה"
+
+  trailing_period:
+    rule: |
+      A sentence-ending period belongs to the language of the sentence,
+      not to the language of the final atom. A Hebrew sentence ending
+      with a backticked English identifier still ends with a Hebrew-side
+      period — the renderer's <bdi> wrap around the identifier ensures
+      the period attaches to the outer Hebrew run.
+    example: |
+      טבלת המקור היא `CUSPF`.
+
+  comma_between_numbers:
+    rule: |
+      See direction_policy.numbers.multi_value_lists. Commas between
+      backticked atoms are prose commas (Hebrew side). Commas inside a
+      single number atom are thousands separators (LTR side).
+
+  ascii_quote_vs_gershayim:
+    rule: |
+      Hebrew gershayim (״ U+05F4) is PREFERRED in agent-authored prose
+      for Hebrew acronyms (ש״ח, צה״ל, ארה״ב). ASCII straight quote (")
+      is ACCEPTABLE when:
+        - copying verbatim from source code (per
+          anti_hallucination_engine.yaml, source is not modified);
+        - the keyboard layout does not provide gershayim;
+        - quoting from existing reference documents that use ASCII.
+      The validator (MRP_VC_005) flags ASCII quote in Hebrew acronyms
+      ONLY in prose authored by the agent, NEVER inside fenced code
+      blocks or inline backtick spans. /document:fix offers a transform
+      to convert ASCII quote to gershayim inside Hebrew acronyms in
+      prose context.
+    rationale: |
+      v1.0 of this protocol treated ASCII quote as forbidden. Review
+      noted modern Hebrew style guides are split and that legitimate
+      source quotations (e.g. MOVE 'ש"ח' TO WS-CURRENCY in COBOL) would
+      generate false positives. v1.1.0 demotes the rule to "preferred"
+      and scopes the validator to prose-only.
+
+  em_dash:
+    rule: |
+      Em-dash (— U+2014) inside Hebrew prose is fine when it joins two
+      Hebrew phrases. It is NO LONGER recommended for bilingual heading
+      separation (see heading_conventions for the deprecation note).
+
+# -----------------------------------------------------------------------------
+# UNICODE MARKERS — when needed, when forbidden
+# -----------------------------------------------------------------------------
+unicode_markers:
+
+  allowed:
+    - codepoint: "U+200E"
+      name: "LRM (Left-to-Right Mark)"
+      use: |
+        Plain-text artifacts only (.txt, .csv cells, log lines). Forces
+        a neutral character to behave as LTR-strong. In .md/.html,
+        prefer <span dir="ltr"> or <bdi>.
+    - codepoint: "U+200F"
+      name: "RLM (Right-to-Left Mark)"
+      use: "Same as LRM, reversed direction. Plain-text only."
+    - codepoint: "U+2066"
+      name: "LRI (Left-to-Right Isolate)"
+      use: |
+        Modern isolate, replaces deprecated LRE. Use sparingly in
+        plain-text contexts.
+    - codepoint: "U+2067"
+      name: "RLI (Right-to-Left Isolate)"
+      use: "Modern isolate, replaces deprecated RLE."
+    - codepoint: "U+2068"
+      name: "FSI (First-Strong Isolate)"
+      use: |
+        Like dir="auto" but in plain text. Resolves to first-strong
+        character's direction.
+    - codepoint: "U+2069"
+      name: "PDI (Pop Directional Isolate)"
+      use: "Terminates LRI/RLI/FSI scope."
+    - codepoint: "U+2009"
+      name: "Thin Space"
+      use: |
+        Optional spacing aid around em-dash or colon in bilingual
+        heading separators. Not required, not forbidden.
+
+  forbidden:
+    - codepoint: "U+202A"
+      name: "LRE (Left-to-Right Embedding)"
+      reason: "Deprecated by UAX #9; Trojan Source CVE-2021-42574 vector."
+    - codepoint: "U+202B"
+      name: "RLE (Right-to-Left Embedding)"
+      reason: "Deprecated by UAX #9; Trojan Source CVE-2021-42574 vector."
+    - codepoint: "U+202C"
+      name: "PDF (Pop Directional Formatting)"
+      reason: "Pairs with deprecated LRE/RLE/LRO/RLO. Forbidden by association."
+    - codepoint: "U+202D"
+      name: "LRO (Left-to-Right Override)"
+      reason: "Override (not isolate); Trojan Source vector."
+    - codepoint: "U+202E"
+      name: "RLO (Right-to-Left Override)"
+      reason: "Override (not isolate); Trojan Source vector."
+
+# -----------------------------------------------------------------------------
+# MERMAID DIAGRAMS
+# -----------------------------------------------------------------------------
+mermaid_diagrams:
+
+  rule: |
+    Mermaid diagrams are pre-rendered by the documenter agent to SVG and
+    embedded as <img src="data:image/svg+xml;base64,…">. The viewer's
+    DOMPurify config permits data: URIs on <img> via the documented v3
+    option ALLOWED_URI_REGEXP (NOT the deprecated ADD_DATA_URI_TAGS).
+
+  hebrew_node_labels:
+    rule: |
+      When a Mermaid node label contains Hebrew, the documenter MUST
+      initialize Mermaid with htmlLabels: true so labels render via
+      <foreignObject> HTML (which respects unicode-bidi), NOT as raw
+      <text> elements (which render LTR by default and reverse Hebrew
+      character by character).
+    initialization: |
+      mermaid.initialize({
+        theme: "default",
+        themeVariables: {
+          fontFamily: "Arial Hebrew, Noto Sans Hebrew, sans-serif"
+        },
+        flowchart: { htmlLabels: true }
+      });
+
+# -----------------------------------------------------------------------------
+# ENCODING REQUIREMENTS (NEW in v1.1.0)
+# -----------------------------------------------------------------------------
+encoding:
+
+  source_file_encoding: "UTF-8 without BOM (utf8NoBOM)"
+
+  powershell_emission_rule: |
+    When emitting markdown from Windows PowerShell 5.1, Out-File defaults
+    to UTF-16 LE with BOM, which silently corrupts Hebrew rendering
+    downstream. Use one of:
+      - PowerShell 7: Out-File -Encoding utf8NoBOM
+      - PowerShell 5.1:
+          [System.IO.File]::WriteAllText(
+            $path, $content, [System.Text.UTF8Encoding]::new($false))
+    The viewer (Protocols/viewer/viewer.html) detects BOM in dropped
+    files and decodes UTF-16 LE/BE / UTF-8 accordingly, but the
+    canonical wire format is UTF-8 without BOM.
+
+  json_round_trip_warning: |
+    When piping Hebrew content through ConvertTo-Json in PowerShell,
+    Hebrew characters are escaped as \uXXXX. Writing the JSON-stringified
+    output directly to a .md file produces literal "רוק"
+    sequences that render as ASCII text — NOT Hebrew. Use
+    [System.Text.RegularExpressions.Regex]::Unescape($json) or
+    ConvertTo-Json -EscapeHandling Default (PS 7) before writing.
+
+# -----------------------------------------------------------------------------
+# FORBIDDEN PATTERNS (FP_001 — FP_011)
+# -----------------------------------------------------------------------------
+forbidden_patterns:
+
+  - id: "FP_001"
+    name: "legacy_bidi_control_in_source"
+    description: |
+      Any of U+202A, U+202B, U+202C, U+202D, U+202E appearing in an
+      agent-authored .md, .yaml, or .html file.
+    bad_example: "(invisible — see MRP_VC_001 regex with Unicode escapes)"
+    fix: "Replace with markup (<bdi>, dir attribute) or modern isolates."
+
+  - id: "FP_002"
+    name: "bare_english_identifier_in_hebrew_prose"
+    description: |
+      English identifier or technical token appearing inline in Hebrew
+      prose without backtick wrapping AND not matching the framework-ID
+      or acronym allowlist (see MRP_VC_002).
+    bad_example: "התוכנית RK0041C776 קוראת מקובץ CUSPF."
+    fix: "התוכנית `RK0041C776` קוראת מקובץ `CUSPF`."
+
+  - id: "FP_003"
+    name: "mixed_direction_table_cell"
+    description: "A table cell mixing Hebrew prose with an English atom and no isolation."
+    bad_example: "| The CUSPF file ושם הטבלה הוא X |"
+    fix: "Split into two cells or hoist the gloss to a footnote."
+
+  - id: "FP_004"
+    name: "ascii_quote_in_hebrew_acronym_prose"
+    description: |
+      ASCII straight quote inside Hebrew acronym in PROSE context only
+      (not inside backtick spans, not inside fenced code blocks). v1.1.0
+      demotes this from "forbidden" to "preferred"; the validator
+      penalty is minor and capped.
+    bad_example: "התשלום הוא 1500 ש\"ח."
+    fix: "התשלום הוא 1500 ש״ח."
+
+  - id: "FP_005"
+    name: "bare_url_in_prose"
+    description: |
+      A URL or file path appearing inline without backtick wrapping.
+      Marked autolinking is disabled in the viewer to enforce this.
+    bad_example: "ראה https://example.co.il/api לפרטים."
+    fix: "ראה `https://example.co.il/api` לפרטים."
+
+  - id: "FP_006"
+    name: "manual_dir_attribute_in_markdown"
+    description: |
+      Inline HTML <p dir="rtl">…</p> or <span dir="ltr">…</span> in
+      markdown source. The renderer injects dir="auto" automatically;
+      manual injection bypasses the policy and creates inconsistency.
+    bad_example: '<p dir="rtl">טקסט</p>'
+    fix: "Use plain markdown paragraph; renderer handles direction."
+
+  - id: "FP_007"
+    name: "unbacktiked_number_range_in_hebrew"
+    description: |
+      A line range or page range expressed as two backticked atoms with
+      a bare hyphen between them in Hebrew prose. Visual order reverses
+      under RTL.
+    bad_example: "שורות `4,105`-`5,957`"
+    fix: "שורות `4105–5957`  (single atom, en-dash inside)"
+
+  - id: "FP_008"
+    name: "bilingual_heading_em_dash"
+    description: |
+      Em-dash separator in a bilingual heading. Deprecated in v1.1.0.
+    bad_example: "## תוכנית `RK0041C776` — Pharmacy Daily Journal"
+    fix: "## תוכנית `RK0041C776`: Pharmacy Daily Journal"
+
+  - id: "FP_009"
+    name: "slash_or_pipe_heading_separator"
+    description: "Slash or pipe used to separate bilingual heading parts."
+    bad_example: "## תוכנית / Program  OR  ## תוכנית | Program"
+    fix: "Use colon + space + <bdi>-wrapped subtitle, or two separate headings."
+
+  - id: "FP_010"
+    name: "hebrew_paragraph_starts_with_code_atom"
+    description: |
+      A Hebrew paragraph whose first character is a backticked English
+      atom. Under dir="auto", first-strong resolves to LTR and the
+      Hebrew sentence inherits LTR direction.
+    bad_example: "`RKD0753011` היא טבלת המקור."
+    fix: "טבלת המקור היא `RKD0753011`."
+
+  - id: "FP_011"
+    name: "escaped_unicode_hebrew_in_source"
+    description: |
+      Literal "\\u05XX" sequences in .md source instead of Hebrew
+      glyphs. Usually a sign that PowerShell ConvertTo-Json output was
+      written directly to file without unescaping. See encoding
+      section.
+    bad_example: 'תוכנית'
+    fix: |
+      Decode before writing:
+      [System.Text.RegularExpressions.Regex]::Unescape($json)
+
+# -----------------------------------------------------------------------------
+# VALIDATION CHECKS (MRP_VC_001 — MRP_VC_012)
+# -----------------------------------------------------------------------------
+# All checks use parseable integer point values. max_penalty caps each
+# check's contribution to the 100-point validation total. is_blocker:true
+# means a single occurrence forces the doc to fail regardless of points.
+# All regex values use Unicode escapes (\uXXXX) instead of literal bidi
+# control characters, so this file passes its own MRP_VC_001 check and
+# does not corrupt LLM tokenization.
+# -----------------------------------------------------------------------------
+validation_checks:
+
+  - id: "MRP_VC_001"
+    name: "no_legacy_bidi_controls"
+    severity: "blocker"
+    is_blocker: true
+    points_per_occurrence: 10
+    max_penalty: 100
+    regex: "[\\u202A\\u202B\\u202C\\u202D\\u202E]"
+    expected_matches: 0
+    excludes: "this YAML file itself (self-exclusion meta-rule)"
+    description: |
+      Detects deprecated bidi control characters (LRE/RLE/PDF/LRO/RLO).
+      Regex uses Unicode escapes; the validator implementation
+      (PowerShell Select-String, ripgrep, Python re) must interpret the
+      \uXXXX sequences. The validator excludes this protocol file from
+      MRP_VC_001 since the file documents the codepoints by name.
+
+  - id: "MRP_VC_002"
+    name: "bare_identifier_in_hebrew_prose"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 2
+    max_penalty: 20
+    detection_algorithm: |
+      Two-pass detection (ripgrep-compatible, no Perl lookbehind):
+        pass_1: candidate identifiers
+          regex: '\\b[A-Z][A-Z0-9_-]{3,}\\b'
+          (minimum length 4 to reduce 3-letter acronym noise)
+        pass_2: backtick spans
+          regex: '`[^`]*`'
+        post_filter (in PowerShell/Python wrapper):
+          - exclude candidates inside fenced code blocks (track ``` toggles)
+          - exclude candidates inside inline backtick spans (from pass_2)
+          - exclude candidates matching framework_id_allowlist
+          - exclude candidates matching acronym_allowlist
+          - only report candidates appearing on a line that also
+            contains at least one Hebrew character [\\u05D0-\\u05EA]
+    framework_id_allowlist:
+      - "^DOC_INT_\\d+"
+      - "^DOC_QA_\\d+"
+      - "^DOC_OUT_\\d+"
+      - "^DOC_DLG_\\d+"
+      - "^MRP_\\d+"
+      - "^MRP_VC_\\d+"
+      - "^FP_\\d+"
+      - "^COMP_\\d+"
+      - "^CIDRA"
+    acronym_allowlist:
+      - "SAP"
+      - "URL"
+      - "CSV"
+      - "JSON"
+      - "XML"
+      - "API"
+      - "RPG"
+      - "DDS"
+      - "CL"
+      - "RTL"
+      - "LTR"
+      - "UAX"
+      - "CSS"
+      - "HTML"
+      - "YAML"
+      - "MD"
+      - "SQL"
+      - "ABAP"
+      - "COBOL"
+      - "LRM"
+      - "RLM"
+      - "LRI"
+      - "RLI"
+      - "FSI"
+      - "PDI"
+      - "LRE"
+      - "RLE"
+      - "LRO"
+      - "RLO"
+      - "PDF"
+      - "CVE"
+      - "UTF"
+      - "BOM"
+      - "ASCII"
+      - "CDN"
+      - "SRI"
+      - "ID"
+      - "UI"
+      - "HTTP"
+      - "HTTPS"
+      - "USA"
+      - "UK"
+      - "ISO"
+
+  - id: "MRP_VC_003"
+    name: "mixed_direction_table_cell"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 3
+    max_penalty: 30
+    detection_algorithm: |
+      For each table cell:
+        - extract cell.textContent
+        - check if textContent contains BOTH Hebrew [\\u05D0-\\u05EA]
+          AND Latin-letter prose [a-zA-Z]{4,} (length 4+ to filter
+          acronyms in the allowlist)
+        - exclude cells matching code_only detection (see
+          table_conventions.code_only_cells)
+        - if both conditions met: flag
+
+  - id: "MRP_VC_004"
+    name: "no_inline_dir_attribute_in_markdown"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 2
+    max_penalty: 20
+    regex: '<(p|span|div|h[1-6]|li|td|th)[^>]*\\sdir\\s*='
+    expected_matches: 0
+    description: |
+      Detects manual dir attribute on inline HTML in markdown source.
+      The renderer auto-injects dir="auto"; manual injection is FP_006.
+
+  - id: "MRP_VC_005"
+    name: "ascii_quote_in_hebrew_acronym_prose_only"
+    severity: "minor"
+    is_blocker: false
+    points_per_occurrence: 1
+    max_penalty: 5
+    detection_algorithm: |
+      Scan PROSE only (exclude fenced code blocks and inline backtick
+      spans):
+        - track ``` fence toggles line by line
+        - for each non-code line, strip out inline `…` spans first
+        - on the remaining prose, apply regex
+          [\\u05D0-\\u05EA]"[\\u05D0-\\u05EA]
+        - additionally catch JSON-escaped form
+          [\\u05D0-\\u05EA]\\\\\"[\\u05D0-\\u05EA]
+    description: |
+      Prefer Hebrew gershayim (״ U+05F4) in author-written prose.
+      ASCII quote inside quoted source strings is OUT OF SCOPE for this
+      check.
+
+  - id: "MRP_VC_006"
+    name: "code_block_indentation_preserved"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 2
+    max_penalty: 20
+    detection_algorithm: |
+      For each fenced code block:
+        - verify no lines were re-indented during render-pipeline
+          transforms
+        - verify column-7 alignment preserved for COBOL blocks
+          (language identifier "cobol" or "cobolfree")
+    description: "Code source columns carry semantics and must not shift."
+
+  - id: "MRP_VC_007"
+    name: "hebrew_ordered_list_uses_letters"
+    severity: "informational"
+    is_blocker: false
+    points_per_occurrence: 0
+    max_penalty: 0
+    regex: "^\\s*[\\u05D0-\\u05EA]\\.\\s"
+    description: |
+      Informational: when Hebrew ordered lists use Hebrew letters,
+      ensure list-style-type: hebrew is applied via lang="he" on the
+      <ol>. No penalty; just a hint to the documenter to add lang.
+
+  - id: "MRP_VC_008"
+    name: "per_language_hedge_phrase_count"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 5
+    max_penalty: 25
+    detection_algorithm: |
+      Implemented inline in this protocol (no delegation to a non-
+      existent rule). Counts hedge phrases PER LANGUAGE, ignoring fenced
+      code blocks and code-only table cells.
+        hebrew_phrases:
+          - "נראה ש"
+          - "נראה כי"
+          - "לפי הקוד"
+          - "ככל הנראה"
+          - "על פי"
+          - "מצטייר ש"
+          - "מבוסס על"
+        english_phrases:
+          - "appears to"
+          - "according to"
+          - "seems to"
+          - "based on"
+          - "looks like"
+          - "according to the code"
+        counting_rule:
+          - strip fenced code blocks (track ``` toggles)
+          - strip code-only table cells (per code_only detection)
+          - strip inline backtick spans
+          - on the remaining prose, count occurrences of each phrase
+            list separately
+          - if the document is bilingual (documentation_language ==
+            "bilingual" in DOCUMENTER_PROJECT_CONFIG.yaml): require
+            >= 5 occurrences for EACH language
+          - if monolingual: require >= 5 for the document's language
+        penalty:
+          - 5 points per missing language (so a bilingual doc with 0
+            Hebrew hedges and 5 English hedges loses 5)
+
+  - id: "MRP_VC_009"
+    name: "ranges_use_single_atom_with_en_dash"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 2
+    max_penalty: 20
+    detection_algorithm: |
+      Look for the anti-pattern: backtick-number-backtick + hyphen +
+      backtick-number-backtick on a line that also contains Hebrew.
+        regex: '`[\\d,]+`\\s*-\\s*`[\\d,]+`'
+      And the requirement on a line containing Hebrew [\\u05D0-\\u05EA].
+      Fix: collapse to a single backtick span with en-dash inside.
+
+  - id: "MRP_VC_010"
+    name: "front_matter_dir_present_for_bilingual"
+    severity: "informational"
+    is_blocker: false
+    points_per_occurrence: 0
+    max_penalty: 0
+    description: |
+      Informational: bilingual documents SHOULD open with YAML
+      front-matter containing dir: rtl|ltr|auto. Absence falls back to
+      first-strong heuristic. No penalty; just surfaces the choice to
+      the documenter agent.
+
+  - id: "MRP_VC_011"
+    name: "no_escaped_hebrew_unicode_in_source"
+    severity: "blocker"
+    is_blocker: true
+    points_per_occurrence: 10
+    max_penalty: 100
+    regex: "\\\\u05[0-9A-Fa-f]{2}"
+    expected_matches: 0
+    description: |
+      Detects literal \\u05XX escape sequences in source — usually a
+      sign that PowerShell ConvertTo-Json output was written without
+      [System.Text.RegularExpressions.Regex]::Unescape. The Hebrew never
+      renders. See encoding section.
+    excludes: |
+      This protocol file (which documents the regex literally) is
+      self-excluded from MRP_VC_011. Validator implementation must
+      skip its own definition file.
+
+  - id: "MRP_VC_012"
+    name: "mermaid_hebrew_labels_use_foreignobject"
+    severity: "warning"
+    is_blocker: false
+    points_per_occurrence: 3
+    max_penalty: 15
+    description: |
+      Manual per-diagram check (not greppable): for each Mermaid SVG
+      embedded as data: URI img, if the SVG contains Hebrew text
+      ([\\u05D0-\\u05EA]) inside <text> elements (not <foreignObject>),
+      the diagram was rendered with htmlLabels:false and Hebrew labels
+      will appear reversed. Fix: re-render with the initialization in
+      mermaid_diagrams section.
+
+# -----------------------------------------------------------------------------
+# WORKED PENALTY EXAMPLE
+# -----------------------------------------------------------------------------
+# A bilingual document with:
+#   - 3 occurrences of MRP_VC_002 (bare identifiers)
+#   - 1 occurrence of MRP_VC_005 (ASCII quote in Hebrew acronym)
+#   - 0 occurrences of all others
+# Score:
+#   MRP_VC_002: min(3 * 2, 20) = 6
+#   MRP_VC_005: min(1 * 1, 5) = 1
+#   Total deducted: 7
+#   Final score: 100 - 7 = 93 / 100
+# Since the validation_framework.yaml requires 100/100 for delivery,
+# this document needs the 4 violations fixed (or the per-occurrence
+# penalty waived via documented exception) before /document gates pass.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# CSS PATTERN LIBRARY (reference)
+# -----------------------------------------------------------------------------
+# The patterns below appear in Protocols/viewer/viewer.html and are
+# canonical. Other CIDRA renderers (custom HTML pipelines) SHOULD mirror
+# these patterns.
+# -----------------------------------------------------------------------------
+css_pattern_library:
+
+  recommended:
+    baseline: |
+      body { unicode-bidi: plaintext }
+      /* unicode-bidi does NOT inherit, so re-declare on every block: */
+      .md p, .md li, .md ul, .md ol, .md blockquote, .md dd,
+      .md figcaption, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6,
+      .md details, .md summary, .md td, .md th {
+        unicode-bidi: plaintext;
+      }
+    code_isolation: |
+      .md pre, .md code, .md kbd, .md samp, .md var {
+        direction: ltr;             /* NOT !important — see MRP_001 */
+        unicode-bidi: isolate;
+        font-family: var(--mono);
+        text-align: left;
+      }
+    inline_code_in_block: |
+      .md p bdi, .md li bdi, .md td bdi, .md th bdi,
+      .md dd bdi, .md h1 bdi, .md h2 bdi, .md h3 bdi,
+      .md h4 bdi, .md h5 bdi, .md h6 bdi {
+        direction: ltr;
+        unicode-bidi: isolate;
+      }
+    table_cell_code_only: |
+      /* Modern browsers via :has() */
+      .md td:has(> bdi:only-child > code:only-child),
+      .md th:has(> bdi:only-child > code:only-child) {
+        direction: ltr;
+        text-align: left;
+      }
+      /* JS-driven fallback (renderer adds class="code-only") */
+      .md td.code-only, .md th.code-only {
+        direction: ltr;
+        text-align: left;
+      }
+    hebrew_comment_in_code: |
+      /* Renderer post-processes hljs-comment spans containing Hebrew */
+      .md pre bdi[dir="rtl"] {
+        unicode-bidi: isolate;
+        direction: rtl;
+      }
+    nested_table_inheritance: |
+      .md table .md table, .md table table {
+        direction: inherit;
+        unicode-bidi: plaintext;
+      }
+
+  permanent_anti_pattern_guard: |
+    /* DO NOT WRITE THIS — kept here as a permanent guard against
+       well-meaning developers who try to "fix" mixed-direction issues
+       by force-overriding everything to LTR. This destroys Hebrew
+       rendering globally and is the root cause of the audit findings
+       this protocol exists to prevent. */
+    /* * { direction: ltr !important; unicode-bidi: bidi-override; } */
+
+# -----------------------------------------------------------------------------
+# WIRE-IN PATHS
+# -----------------------------------------------------------------------------
+loaded_by:
+  primary_consumers:
+    - agent: "THE_DOCUMENTER_AGENT"
+      path: "Agents/THE_DOCUMENTER_AGENT/agent_specification.md"
+      load_step: "Phase 0 — mandatory reads, before any /document workflow"
+      skills_reference: "Agents/THE_DOCUMENTER_AGENT/skills.yaml DOC_INT_015"
+  secondary_consumers:
+    - agent: "THE_BRAINSTORMER_AGENT"
+      path: "Agents/THE_BRAINSTORMER_AGENT/agent_specification.md"
+      load_step: "When emitting bilingual blueprints"
+  wire_in_targets:
+    - file: ".claude/commands/document.md"
+      action: |
+        Slash-command preamble references this protocol so any
+        /document invocation loads it before producing markdown.
+    - file: ".claude/commands/document_validate.md"
+      action: |
+        /document:validate runs the validation_checks above as the
+        multilingual-rendering portion of the 100-point gate.
+    - file: "CLAUDE.md (per-project)"
+      action: |
+        Projects with bilingual output add a line under "How Claude
+        must act when running a CIDRA command" pointing to this
+        protocol as a mandatory load.
+
+# -----------------------------------------------------------------------------
+# REFERENCES
+# -----------------------------------------------------------------------------
+references:
+  - "Unicode UAX #9 — Unicode Bidirectional Algorithm"
+  - "W3C HTML5 §3.2.6.2 — The dir attribute"
+  - "W3C HTML5 §4.13.2 — The bdi element"
+  - "CVE-2021-42574 — Trojan Source attack"
+  - "MDN: unicode-bidi CSS property"
+  - "MDN: dir global attribute and dir='auto'"
+  - "Hebrew Academy typography guidelines"
+
+# -----------------------------------------------------------------------------
+# VERSION HISTORY
+# -----------------------------------------------------------------------------
+version_history:
+
+  - version: "1.0.0"
+    date: "2026-05-30"
+    changes:
+      - "Initial protocol authored after RK1_PHARMACY_JOURNAL audit"
+      - "7 core principles (MRP_001 — MRP_007)"
+      - "Direction policy for 6 content kinds"
+      - "10 forbidden patterns (FP_001 — FP_010)"
+      - "10 validation checks (MRP_VC_001 — MRP_VC_010)"
+      - "Companion viewer at Protocols/viewer/viewer.html"
+    motivation: |
+      RK1_PHARMACY_JOURNAL documentation audit revealed inconsistent
+      handling of Hebrew + English mixed content across documenter
+      outputs. Identifiers landed on the wrong side of Hebrew
+      punctuation; table cells with code reversed column order under
+      RTL; em-dash separators in bilingual headings rendered
+      ambiguously. The protocol unifies handling so every CIDRA
+      bilingual artifact renders identically across viewers.
+
+  - version: "1.1.0"
+    date: "2026-05-31"
+    changes:
+      - "MRP_VC_001 regex rewritten with Unicode escapes (\\u202A-\\u202E) so the protocol file passes its own check and does not corrupt LLM tokenization"
+      - "Added direction_policy.numbers.ranges_and_compound_numbers — single-atom backtick + en-dash for line ranges (FP_007 + MRP_VC_009)"
+      - "Heading conventions: deprecated em-dash form (FP_008), promoted colon-with-bdi and two-headings forms; bare slash/pipe still forbidden (FP_009)"
+      - "Hebrew comment in code: documented LTR-pre trade-off explicitly; renderer post-processes hljs-comment spans containing Hebrew into <bdi dir=rtl>; viewer offers Mirror Hebrew comments toggle as view-time preference"
+      - "FP_004 demoted from forbidden to preferred; MRP_VC_005 scoped to prose only (excludes code blocks and backtick spans) to prevent false positives on source-quoted ש\"ח"
+      - "MRP_VC_002 rewritten as two-pass ripgrep-compatible algorithm with framework_id_allowlist and acronym_allowlist (SAP, URL, JSON, API, etc.) to eliminate false positives"
+      - "MRP_VC_008 defined inline (no delegation to non-existent DOC_INT_005_extended); per-language phrase lists explicit"
+      - "All penalty values are parseable integers (points_per_occurrence + max_penalty + is_blocker)"
+      - "Added FP_011 / MRP_VC_011 for escaped Unicode Hebrew (\\u05XX from PowerShell ConvertTo-Json)"
+      - "Added encoding section with PowerShell utf8NoBOM guidance and ConvertTo-Json round-trip warning"
+      - "Added mermaid_diagrams section with htmlLabels:true requirement and MRP_VC_012"
+      - "Added list_conventions.nested_lists rule including <ul>/<ol> in unicode-bidi:plaintext re-declaration"
+      - "table_conventions: explicit code_only detection algorithm; nested_tables inheritance rule"
+      - "css_pattern_library: full reference patterns matching viewer.html implementation; permanent anti-pattern guard comment retained"
+      - "direction:ltr on <pre> NO LONGER marked !important — allows hjls-comment-level Hebrew override (MRP_001)"
+      - "Mono font stack: Hebrew fallbacks appended (Miriam Mono CLM, Hack Hebrew, Noto Sans Mono Hebrew)"
+      - "Added front-matter convention (dir: rtl|ltr|auto) — parsed by viewer to set html[dir] before render"
+    motivation: |
+      Adversarial review (typography-correctness, implementation-
+      feasibility, edge-cases lenses) against the v1.0 draft identified
+      critical defects that would have shipped to production: regex
+      self-sabotage (MRP_VC_001 embedding the forbidden codepoints in
+      its own definition), unparseable penalty strings ("2_per_occurrence"
+      as a YAML scalar), reference to non-existent DOC_INT_005_extended,
+      MRP_VC_002 false-positives on framework rule IDs and common
+      acronyms, em-dash heading separator that visually anchors to the
+      English run rather than the boundary, line range visual reversal,
+      Hebrew comment anchoring trade-off undocumented. v1.1.0 folds all
+      critical+high adversarial findings into the published protocol.
