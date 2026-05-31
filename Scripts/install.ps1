@@ -186,15 +186,19 @@ function Install-Integrations {
 
     # VS Code integration
     $vscodeSource = Join-Path $protocolsPath ".vscode\cidra-settings.json"
-    if (Test-Path $vscodeSource) {
+    if (Test-Path -LiteralPath $vscodeSource) {
         $vscodeDir = Join-Path $TargetPath ".vscode"
-        if (-not (Test-Path $vscodeDir)) {
+        if (-not (Test-Path -LiteralPath $vscodeDir)) {
             New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
         }
         $vscodeTarget = Join-Path $vscodeDir "cidra-settings.json"
-        Copy-Item -Path $vscodeSource -Destination $vscodeTarget
-        Write-Host "    [CREATED] .vscode/cidra-settings.json" -ForegroundColor $Green
-        Write-Host "    Note: Merge with settings.json manually if needed" -ForegroundColor $Yellow
+        if ((Test-Path -LiteralPath $vscodeTarget) -and -not $Force) {
+            Write-Host "    [SKIP] .vscode/cidra-settings.json (exists; use -Force to overwrite)" -ForegroundColor $Yellow
+        } else {
+            Copy-Item -Path $vscodeSource -Destination $vscodeTarget -Force
+            Write-Host "    [CREATED] .vscode/cidra-settings.json" -ForegroundColor $Green
+            Write-Host "    Note: Merge with settings.json manually if needed" -ForegroundColor $Yellow
+        }
     }
 
     # Claude Code integration
@@ -215,6 +219,52 @@ function Install-Integrations {
             Copy-Item -Path $claudeSource -Destination $claudeTarget
             Write-Host "    [CREATED] CLAUDE.md" -ForegroundColor $Green
         }
+    }
+
+    # Claude Code slash command templates (project-agnostic)
+    $commandsSource = Join-Path $protocolsPath ".claude\commands"
+    if (Test-Path -LiteralPath $commandsSource) {
+        $claudeDir = Join-Path $TargetPath ".claude"
+        if (-not (Test-Path -LiteralPath $claudeDir)) {
+            New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+        }
+        $commandsTarget = Join-Path $claudeDir "commands"
+        if (Test-Path -LiteralPath $commandsTarget) {
+            if ($Force) {
+                # Full replace: remove stale files first so renamed/removed
+                # commands from older framework versions do not linger.
+                Remove-Item -LiteralPath $commandsTarget -Recurse -Force
+                Copy-Item -Path $commandsSource -Destination $claudeDir -Recurse -Force
+                $cmdCount = (Get-ChildItem -LiteralPath $commandsTarget -Recurse -File -ErrorAction SilentlyContinue).Count
+                Write-Host "    [REPLACED] .claude\commands\ ($cmdCount template(s) forced)" -ForegroundColor $Green
+            } else {
+                # Merge: copy only files not already present.
+                $copied = 0
+                Get-ChildItem -LiteralPath $commandsSource -Recurse -File | ForEach-Object {
+                    $rel = $_.FullName.Substring($commandsSource.Length).TrimStart('\','/')
+                    $dest = Join-Path $commandsTarget $rel
+                    $destDir = Split-Path $dest -Parent
+                    if (-not (Test-Path -LiteralPath $destDir)) {
+                        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                    }
+                    if (-not (Test-Path -LiteralPath $dest)) {
+                        Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+                        $copied++
+                    }
+                }
+                if ($copied -gt 0) {
+                    Write-Host "    [MERGED] .claude\commands\ ($copied new file(s) added)" -ForegroundColor $Green
+                } else {
+                    Write-Host "    [SKIP] .claude\commands\ (already present; use -Force to fully replace)" -ForegroundColor $Yellow
+                }
+            }
+        } else {
+            Copy-Item -Path $commandsSource -Destination $claudeDir -Recurse -Force
+            $cmdCount = (Get-ChildItem -LiteralPath $commandsTarget -Recurse -File -ErrorAction SilentlyContinue).Count
+            Write-Host "    [CREATED] .claude\commands\ ($cmdCount template(s))" -ForegroundColor $Green
+        }
+    } else {
+        Write-Host "    [WARN] .claude\commands not found in framework; slash commands will not be available" -ForegroundColor $Yellow
     }
 }
 
@@ -240,6 +290,7 @@ function Uninstall-CIDRA {
     Write-Host "Note: The following files may contain CIDRA references:" -ForegroundColor $Yellow
     Write-Host "  - .cursorrules (CIDRA section)"
     Write-Host "  - .vscode/cidra-settings.json"
+    Write-Host "  - .claude/commands/ (brainstorm.md, chunk.md, document.md, recommend.md + subfolders)"
     Write-Host "  - CLAUDE.md (CIDRA section)"
     Write-Host "Please remove these manually if desired." -ForegroundColor $Yellow
 
@@ -250,33 +301,41 @@ function Uninstall-CIDRA {
 
 function Show-PostInstall {
     Write-Host ""
-    Write-Host "=" * 50 -ForegroundColor $Cyan
+    Write-Host ("=" * 50) -ForegroundColor $Cyan
     Write-Host "  CIDRA Installation Complete!" -ForegroundColor $Green
-    Write-Host "=" * 50 -ForegroundColor $Cyan
+    Write-Host ("=" * 50) -ForegroundColor $Cyan
     Write-Host ""
     Write-Host "Available Commands:" -ForegroundColor $Yellow
     Write-Host ""
-    Write-Host "  THE_CHUNKER_AGENT:" -ForegroundColor $Cyan
+    Write-Host "  THE_BRAINSTORMER_AGENT (Stage 0):" -ForegroundColor $Cyan
+    Write-Host "    /brainstorm             - Goal elicitation, gap analysis, blueprint"
+    Write-Host "    /brainstorm:format      - Show recommended documentation format"
+    Write-Host "    /brainstorm:gap         - Re-issue MISSING_INPUTS.md checklist"
+    Write-Host "    /brainstorm:status      - Show current brainstormer understanding"
+    Write-Host ""
+    Write-Host "  THE_CHUNKER_AGENT (Stage 1):" -ForegroundColor $Cyan
     Write-Host "    /chunk [path]           - Chunk code at path"
     Write-Host "    /chunk:analyze [path]   - Preview chunking plan"
     Write-Host "    /chunk:status           - Show chunking progress"
     Write-Host ""
-    Write-Host "  THE_DOCUMENTER_AGENT:" -ForegroundColor $Cyan
+    Write-Host "  THE_DOCUMENTER_AGENT (Stage 2):" -ForegroundColor $Cyan
     Write-Host "    /document:setup         - One-time project config"
     Write-Host "    /document [component]   - Document a component"
     Write-Host "    /document:validate      - Run 100-point validation"
     Write-Host "    /document:fix           - Auto-fix issues"
     Write-Host ""
-    Write-Host "  THE_RECOMMENDER_AGENT:" -ForegroundColor $Cyan
+    Write-Host "  THE_RECOMMENDER_AGENT (Stage 3):" -ForegroundColor $Cyan
     Write-Host "    /recommend [component]  - Get recommendations"
     Write-Host "    /recommend:compare      - Compare technologies"
     Write-Host "    /recommend:risk         - Risk assessment"
     Write-Host ""
     Write-Host "Getting Started:" -ForegroundColor $Yellow
-    Write-Host "  1. Run /document:setup to configure your project"
-    Write-Host "  2. Run /chunk [path] to prepare your code"
-    Write-Host "  3. Run /document [component] to document"
-    Write-Host "  4. Run /recommend [component] for modernization advice"
+    Write-Host "  1. Open a Claude Code chat in this project"
+    Write-Host "  2. Type /brainstorm  (answers the 3 pivotal questions, produces blueprint)"
+    Write-Host "  3. Type /chunk:analyze Source Code, then /chunk Source Code"
+    Write-Host "  4. Type /document:setup, then /document <COMPONENT>"
+    Write-Host "  5. /document:validate ... /document:fix until 100/100"
+    Write-Host "  6. Optional: /recommend <COMPONENT>"
     Write-Host ""
 }
 
@@ -288,7 +347,13 @@ if ($Help) {
 
 Show-Banner
 
-$TargetPath = Resolve-Path $ProjectPath
+# Check path BEFORE Resolve-Path so the friendly error in Test-Prerequisites fires
+# instead of Resolve-Path's raw "Cannot find path" error.
+if (-not (Test-Path -LiteralPath $ProjectPath)) {
+    Write-Host "ERROR: Project path does not exist: $ProjectPath" -ForegroundColor $Red
+    exit 1
+}
+$TargetPath = Resolve-Path -LiteralPath $ProjectPath
 
 if (-not (Test-Prerequisites)) {
     exit 1
