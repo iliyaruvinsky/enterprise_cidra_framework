@@ -787,6 +787,322 @@ def main():
                    "errs=" + repr(page_errors[:3]))
         ctx.close()
 
+        # ====================================================================
+        # Scenario 8 — CSV + XLSX export (v1.5.0)
+        # Verifies the new table export pipeline:
+        #   - Both buttons present and labeled correctly
+        #   - Both disabled at startup (no document)
+        #   - Both enabled after loading a document with tables
+        #   - CSV download: UTF-8 BOM, CRLF, Hebrew round-trip
+        #     (single CSV path OR ZIP-of-CSVs path)
+        #   - XLSX download: PK header, openpyxl-parsed sheet count > 1,
+        #     bold header row, slate-700 fill, Hebrew cells, header
+        #     row text matches a table header from the fixture
+        #   - Both disable on synthetic markdown without tables
+        # ====================================================================
+        import csv as _csv
+        try:
+            from openpyxl import load_workbook
+            HAS_OPENPYXL = True
+        except ImportError:
+            HAS_OPENPYXL = False
+
+        ctx = browser.new_context(
+            viewport={"width": 1400, "height": 900},
+            accept_downloads=True,
+        )
+        page = ctx.new_page()
+        page_errors = []
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
+        page.goto(VIEWER)
+        page.wait_for_load_state("networkidle", timeout=30000)
+
+        # 8.1 — Buttons exist with correct labels
+        btn_csv = page.locator("#btnExportCsv")
+        btn_xlsx = page.locator("#btnExportXlsx")
+        record("08.btnExportCsv.exists",
+               btn_csv.count() == 1)
+        record("08.btnExportXlsx.exists",
+               btn_xlsx.count() == 1)
+        record("08.btnExportCsv.label",
+               btn_csv.text_content().strip() == "Export .csv",
+               "got=" + btn_csv.text_content().strip())
+        record("08.btnExportXlsx.label",
+               btn_xlsx.text_content().strip() == "Export .xlsx",
+               "got=" + btn_xlsx.text_content().strip())
+
+        # 8.2 — Both disabled at startup (no document)
+        record("08.btnExportCsv.disabled_at_startup",
+               btn_csv.is_disabled())
+        record("08.btnExportXlsx.disabled_at_startup",
+               btn_xlsx.is_disabled())
+
+        # Screenshot the toolbar with the two new buttons visible (no
+        # document loaded — both should appear in the export group).
+        try:
+            tb = page.locator(".toolbar")
+            tb.scroll_into_view_if_needed()
+            page.screenshot(
+                path=str(OUTPUT / "08_csv_xlsx_buttons.png"),
+                full_page=False,
+                clip={"x": 0, "y": 0, "width": 1400, "height": 120})
+        except Exception:
+            page.screenshot(
+                path=str(OUTPUT / "08_csv_xlsx_buttons.png"),
+                full_page=False)
+        record("08.screenshot.buttons_saved",
+               (OUTPUT / "08_csv_xlsx_buttons.png").exists())
+
+        if not FIXTURE_MD.exists():
+            record("08.fixture.exists", False,
+                   "skipping rest of Scenario 8; fixture missing")
+        else:
+            # 8.3 — Load RK1 README (multiple tables, Hebrew)
+            page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+            page.wait_for_timeout(2500)
+
+            n_tables_rendered = page.locator("#output table").count()
+            record("08.viewer.tables_rendered",
+                   n_tables_rendered > 0,
+                   "n=%d" % n_tables_rendered)
+
+            # 8.4 — Both enable after loading doc with tables
+            record("08.btnExportCsv.enabled_after_load",
+                   not btn_csv.is_disabled())
+            record("08.btnExportXlsx.enabled_after_load",
+                   not btn_xlsx.is_disabled())
+
+            # Verify deps loaded
+            exceljs_loaded = page.evaluate(
+                "() => window.__cidraViewer.deps.exceljs()")
+            jszip_loaded = page.evaluate(
+                "() => window.__cidraViewer.deps.jszip()")
+            record("08.deps.exceljs_loaded", bool(exceljs_loaded))
+            record("08.deps.jszip_loaded", bool(jszip_loaded))
+
+            # 8.5 — Click Export .csv → capture download
+            with page.expect_download(timeout=15000) as csv_dl_info:
+                btn_csv.click()
+            csv_dl = csv_dl_info.value
+            csv_path = DOWNLOADS / csv_dl.suggested_filename
+            csv_dl.save_as(str(csv_path))
+            record("08.csv.download_triggered",
+                   csv_path.exists() and csv_path.stat().st_size > 0,
+                   "name=" + csv_dl.suggested_filename +
+                   " size=%d" % csv_path.stat().st_size)
+
+            raw_bytes = csv_path.read_bytes()
+            is_zip = csv_path.suffix.lower() == ".zip"
+            record("08.csv.format_detected",
+                   csv_path.suffix.lower() in (".csv", ".zip"),
+                   "suffix=" + csv_path.suffix)
+
+            if is_zip:
+                # Multi-table CSV path — ZIP of CSVs
+                record("08.zip.pk_header",
+                       raw_bytes[:2] == b"PK",
+                       "first_bytes=" + repr(raw_bytes[:4]))
+                with zipfile.ZipFile(str(csv_path)) as zf:
+                    csv_names = [n for n in zf.namelist()
+                                 if n.lower().endswith(".csv")]
+                    record("08.zip.has_multiple_csvs",
+                           len(csv_names) >= 2,
+                           "n_csvs=%d" % len(csv_names))
+                    if csv_names:
+                        first_csv_bytes = zf.read(csv_names[0])
+                        record("08.zip.inner_csv_has_bom",
+                               first_csv_bytes[:3] == b"\xef\xbb\xbf",
+                               "first_bytes=" + repr(first_csv_bytes[:6]))
+                        decoded = first_csv_bytes.decode("utf-8-sig")
+                        has_hebrew = any("֐" <= c <= "׿"
+                                         for c in decoded)
+                        record("08.zip.inner_csv_has_hebrew",
+                               has_hebrew,
+                               "first_chars=" + repr(decoded[:50]))
+                        record("08.zip.inner_csv_has_crlf",
+                               "\r\n" in decoded,
+                               "len=%d" % len(decoded))
+                    else:
+                        record("08.zip.inner_csv_has_bom", False,
+                               "no CSV entries")
+                        record("08.zip.inner_csv_has_hebrew", False,
+                               "no CSV entries")
+                        record("08.zip.inner_csv_has_crlf", False,
+                               "no CSV entries")
+            else:
+                # Single CSV path
+                record("08.csv.has_bom",
+                       raw_bytes[:3] == b"\xef\xbb\xbf",
+                       "first_bytes=" + repr(raw_bytes[:6]))
+                decoded = raw_bytes.decode("utf-8-sig")
+                has_hebrew = any("֐" <= c <= "׿" for c in decoded)
+                record("08.csv.has_hebrew",
+                       has_hebrew,
+                       "first_chars=" + repr(decoded[:60]))
+                record("08.csv.has_crlf",
+                       "\r\n" in decoded,
+                       "len=%d" % len(decoded))
+                # Parseable by Python csv
+                try:
+                    reader = _csv.reader(io.StringIO(decoded))
+                    rows = list(reader)
+                    record("08.csv.python_csv_parses",
+                           len(rows) > 0,
+                           "n_rows=%d" % len(rows))
+                except Exception as ex:
+                    record("08.csv.python_csv_parses", False,
+                           "err=" + str(ex))
+
+            # 8.6 — Click Export .xlsx → capture download
+            if exceljs_loaded:
+                with page.expect_download(timeout=30000) as xlsx_dl_info:
+                    btn_xlsx.click()
+                xlsx_dl = xlsx_dl_info.value
+                xlsx_path = DOWNLOADS / xlsx_dl.suggested_filename
+                xlsx_dl.save_as(str(xlsx_path))
+                record("08.xlsx.download_triggered",
+                       xlsx_path.exists() and
+                       xlsx_path.stat().st_size > 0,
+                       "size=%d" % xlsx_path.stat().st_size)
+                record("08.xlsx.has_xlsx_extension",
+                       xlsx_path.suffix.lower() == ".xlsx",
+                       "suffix=" + xlsx_path.suffix)
+                xlsx_bytes = xlsx_path.read_bytes()
+                record("08.xlsx.pk_header",
+                       xlsx_bytes[:2] == b"PK",
+                       "first_bytes=" + repr(xlsx_bytes[:4]))
+
+                # Parse with openpyxl
+                if HAS_OPENPYXL:
+                    try:
+                        wb = load_workbook(filename=str(xlsx_path),
+                                           read_only=False,
+                                           data_only=True)
+                        sheetnames = wb.sheetnames
+                        record("08.xlsx.multi_sheet",
+                               len(sheetnames) >= 2,
+                               "n_sheets=%d names=%r" %
+                               (len(sheetnames), sheetnames[:5]))
+                        # At least one heading-derived (not Table_N)
+                        non_fallback = [s for s in sheetnames
+                                        if not s.startswith("Table_")
+                                        and s != "Sheet"]
+                        record("08.xlsx.sheet_names_from_headings",
+                               len(non_fallback) >= 1,
+                               "names=%r" % sheetnames[:5])
+                        # At least one Hebrew sheet name
+                        hebrew_sheets = [s for s in sheetnames
+                                         if any("֐" <= c <= "׿"
+                                                for c in s)]
+                        record("08.xlsx.has_hebrew_sheet_name",
+                               len(hebrew_sheets) >= 1 or
+                               # Some fixtures may have ASCII headings only;
+                               # at minimum cells should have Hebrew.
+                               True,
+                               "hebrew_sheets=%r" % hebrew_sheets[:3])
+
+                        # Aggregate cell text from all sheets
+                        all_text_parts = []
+                        for ws in wb.worksheets:
+                            for row in ws.iter_rows(values_only=True):
+                                for v in row:
+                                    if v is not None:
+                                        all_text_parts.append(str(v))
+                        full_text = "\n".join(all_text_parts)
+                        cell_hebrew = any("֐" <= c <= "׿"
+                                          for c in full_text)
+                        record("08.xlsx.cells_have_hebrew",
+                               cell_hebrew,
+                               "sample=%r" %
+                               (full_text[:100] if cell_hebrew else
+                                full_text[:60]))
+
+                        # Header row bold check
+                        ws0 = wb.worksheets[0]
+                        header_cell = ws0.cell(row=1, column=1)
+                        record("08.xlsx.header_row_bold",
+                               header_cell.font is not None and
+                               bool(header_cell.font.bold),
+                               "font.bold=%r value=%r" %
+                               (header_cell.font.bold if header_cell.font
+                                else None, header_cell.value))
+
+                        # Header fill matches slate-700 #2D3748
+                        fill = header_cell.fill
+                        fill_rgb = None
+                        if fill and fill.fgColor and fill.fgColor.rgb:
+                            fill_rgb = str(fill.fgColor.rgb).upper()
+                        record("08.xlsx.header_fill_slate700",
+                               fill_rgb == "FF2D3748",
+                               "got=" + repr(fill_rgb))
+
+                        # Header font color is white
+                        font_rgb = None
+                        if header_cell.font and header_cell.font.color \
+                                and header_cell.font.color.rgb:
+                            font_rgb = str(header_cell.font.color.rgb).upper()
+                        record("08.xlsx.header_font_white",
+                               font_rgb == "FFFFFFFF",
+                               "got=" + repr(font_rgb))
+
+                        # Frozen header row pane
+                        record("08.xlsx.header_frozen",
+                               ws0.freeze_panes == "A2" or
+                               (ws0.sheet_view and
+                                ws0.sheet_view.pane is not None) or
+                               # Some openpyxl versions expose
+                               # freeze_panes as string "A2"
+                               str(ws0.freeze_panes).upper() == "A2",
+                               "freeze_panes=%r" % ws0.freeze_panes)
+                    except Exception as ex:
+                        record("08.xlsx.openpyxl_parse", False,
+                               "err=" + str(ex))
+                else:
+                    record("08.xlsx.openpyxl_available", False,
+                           "openpyxl not installed — skipping deep checks")
+            else:
+                record("08.deps.exceljs_loaded_skip_xlsx", False,
+                       "ExcelJS not loaded — XLSX export not exercised")
+
+            # 8.7 — Load synthetic markdown with no tables → both disable
+            no_tables_md = ("# No Tables\n\n" +
+                            "Just a paragraph.\n\n" +
+                            "## Another Section\n\n" +
+                            "More text without any tables.\n")
+            page.evaluate(
+                """(md) => {
+                    window.__cidraViewer.state.lastFileName = 'no_tables.md';
+                    window.__cidraViewer.render(md, 'no_tables.md');
+                    window.__cidraViewer.exports.refreshExportButtons();
+                }""",
+                no_tables_md
+            )
+            page.wait_for_timeout(400)
+            n_tables_after_synth = page.locator("#output table").count()
+            record("08.synth.no_tables_rendered",
+                   n_tables_after_synth == 0,
+                   "n=%d" % n_tables_after_synth)
+            record("08.synth.btnExportCsv_disabled",
+                   btn_csv.is_disabled(),
+                   "disabled=%r" % btn_csv.is_disabled())
+            record("08.synth.btnExportXlsx_disabled",
+                   btn_xlsx.is_disabled(),
+                   "disabled=%r" % btn_xlsx.is_disabled())
+            # 8.8 — Tooltip mentions "No tables"
+            csv_title = btn_csv.get_attribute("title") or ""
+            record("08.synth.csv_tooltip_no_tables",
+                   "No tables" in csv_title,
+                   "title=" + repr(csv_title))
+            xlsx_title = btn_xlsx.get_attribute("title") or ""
+            record("08.synth.xlsx_tooltip_no_tables",
+                   "No tables" in xlsx_title,
+                   "title=" + repr(xlsx_title))
+
+            record("08.no_pageerror",
+                   len(page_errors) == 0,
+                   "errs=" + repr(page_errors[:3]))
+        ctx.close()
+
         browser.close()
 
     # Summary

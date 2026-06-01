@@ -39,6 +39,8 @@ policy so every documenter output renders identically.
 | `Export .md` | Downloads the **source** Markdown as `.md`. Round-trips losslessly. Disabled until a document is loaded. |
 | `Export .html` | Downloads a self-contained `.html` file with all viewer CSS inlined. Opens identically in any browser without the CDN. Disabled until a document is loaded. |
 | `Export .docx` | Downloads a Word `.docx` produced by `html-docx-js` v0.3.1 with the Hebrew/RTL and Mermaid mitigations described below. Disabled until a document is loaded AND `html-docx-js` finished loading. |
+| `Export .csv` | Downloads the document's tables as `.csv`. **One table** → a single UTF-8 BOM + CRLF CSV file. **Two or more tables** → a `.zip` archive named `<doc>-tables.zip` containing one CSV per table, each with its own BOM. Disabled when the loaded document has no tables. Nested inner tables and tables inside `<blockquote>` are skipped (outer wins, quotations excluded). |
+| `Export .xlsx` | Downloads the document's tables as a single Excel workbook (`.xlsx`) — one worksheet per table. Header row is **bold + slate-700 fill + white text** (mirrors viewer table styling). RTL view is set per-sheet from each source table's resolved direction. Disabled when the loaded document has no tables OR when ExcelJS failed to load. |
 
 The file-info panel shows the loaded filename, size, and detected
 encoding (UTF-8, UTF-16 LE, UTF-16 BE). A warning badge appears if the
@@ -222,6 +224,63 @@ procedure" below).
 | `.md`   | (none) | UTF-8 source markdown | Round-trips the file you loaded. MIME `text/markdown;charset=utf-8`. |
 | `.html` | (none) | Self-contained HTML with all viewer CSS inlined | Pixel-equivalent to the on-screen rendering. Safe to open from `file://` in any browser. |
 | `.docx` | [`html-docx-js`](https://github.com/evidenceprime/html-docx-js) v0.3.1 (SRI-pinned) | Word `.docx` (zip of `[Content_Types].xml`, `word/document.xml`, `word/afchunk.mht`, relationships) | Uses Word's altChunk mechanism; pre-export DOM rewriting compensates for the library's known Hebrew/RTL gaps (see "Adversarial mitigations" below). |
+| `.csv` | [`JSZip`](https://stuk.github.io/jszip/) v3.10.1 (multi-table only; SRI-pinned) | RFC 4180 UTF-8 BOM + CRLF CSV; multi-table → ZIP archive of CSVs | **N=1 table**: single `.csv` file, BOM-prefixed UTF-8, CRLF line endings. **N>=2 tables**: `<doc>-tables.zip` containing one CSV per table (each BOM-prefixed). Inner CSV filenames derived from preceding heading (or `<summary>` for `<details>`-wrapped tables, or `Table_N` fallback). Cells starting with `=`, `+`, `-`, `@`, `\t`, `\r` are prefixed with `'` to neutralize Excel formula injection. Empty rows / tables-inside-blockquotes / nested-inner-tables skipped. |
+| `.xlsx` | [`ExcelJS`](https://github.com/exceljs/exceljs) v4.4.0 (SRI-pinned) | OOXML workbook (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) | One worksheet per surviving table. Header row: **bold, slate-700 (`#2d3748`) fill, white text** — mirrors viewer table styling. Body rows: 1px slate-300 (`#cbd5e0`) borders, top-aligned, wrap text. Per-sheet RTL view set from each source table's resolved direction. Sheet name derived from preceding heading (or `<summary>`), sanitized to Excel rules (max 31 codepoints, no `\ / ? * [ ] : '`, no leading/trailing apostrophe, no reserved name `History`). Grapheme-safe truncation strips trailing combining marks (Hebrew niqqud / cantillation). Collisions resolved with `_2`, `_3` underscore suffix (consistent with CSV path). All cells written as text (`numFmt = '@'`) so account numbers, version strings, and dates are not auto-coerced. Column widths auto-fit (capped at 50, floor 8). Frozen header row. Landscape + fit-to-width page setup. |
+
+### Single-table vs. multi-table CSV behavior
+
+- **N = 1 table** → single `<doc>.csv` with UTF-8 BOM (`﻿`) prefix and CRLF
+  line endings. Excel on Windows auto-detects the BOM and renders Hebrew
+  correctly. **Excel for Mac caveat**: macOS Excel ignores the UTF-8 BOM on
+  CSV double-click; users on macOS should open the CSV via
+  `Data → From Text/CSV` and select UTF-8 explicitly.
+- **N >= 2 tables** → `<doc>-tables.zip` containing one CSV per table. Each
+  inner CSV is BOM-prefixed UTF-8 with CRLF. Inner filenames use the
+  heading-derived name (or `<summary>` for `<details>`-wrapped tables, or
+  `Table_N` fallback). JSZip 3.x writes UTF-8 zip entry names by default,
+  so Hebrew filenames like `קבצים.csv` survive on Windows Explorer,
+  7-Zip, and PowerShell `Expand-Archive`. Legacy unzippers without UTF-8
+  awareness may display scrambled inner filenames — extract with one of
+  the tools above.
+
+### Hebrew-in-Excel caveat
+
+Both CSV and XLSX outputs preserve Hebrew end-to-end:
+
+- **CSV**: UTF-8 + BOM is required for Excel on Windows to auto-detect
+  the encoding and render Hebrew correctly. Without the BOM, Excel
+  interprets the file as Windows-1252 / CP-1255 and produces mojibake.
+  The viewer always emits the BOM. **macOS users** must use `Data → From
+  Text/CSV` because macOS Excel ignores the BOM on double-click.
+- **XLSX**: text is stored as UTF-8 inside the OOXML zip and rendered
+  natively by Excel. Per-sheet RTL view (`workbook.views = [{
+  rightToLeft: true }]`) is set from the source table's resolved
+  direction, so Hebrew tables open with column A on the right and the
+  scrollbar on the left.
+
+### XLSX header styling
+
+The header row is styled to match the viewer's table CSS so the
+exported workbook reads as a stylistic continuation of the document:
+
+| Property | Value | Source |
+|----------|-------|--------|
+| `font.bold` | `true` | XLSX header convention |
+| `font.color.argb` | `FFFFFFFF` (white) | `TABLE_LITERALS.headerFg` (`#ffffff`) |
+| `fill.fgColor.argb` | `FF2D3748` (slate-700) | `TABLE_LITERALS.headerBg` (`#2d3748`) |
+| `fill.type` | `pattern` / `solid` | Excel solid fill |
+| `border` (4 sides) | `thin` slate-400 (`#a0aec0`) | `TABLE_LITERALS.borderOuter` |
+| `alignment.vertical` | `middle` | Header convention |
+| `alignment.horizontal` | `right` (RTL) / `left` (LTR) | Per-sheet direction |
+| `alignment.wrapText` | `true` | Long Hebrew headings wrap |
+| `alignment.readingOrder` | `rtl` / `ltr` | Per-sheet direction |
+| Frozen pane | `ySplit: 1` | Header stays visible on scroll |
+
+Body cells receive 1px slate-300 (`#cbd5e0`) `hair` borders and top
+alignment with wrap text. Every cell is forced to text format (`numFmt
+= '@'`) so account numbers, version strings like `1.4.4`, and partial
+dates like `5/2024` are not silently coerced to dates or numbers — a
+real risk in the pharmacy SAP/AS400 financial-interface context.
 
 ### Filename convention
 
@@ -341,6 +400,8 @@ caught by both per-script `onerror` handlers and a global capture-phase
 | `highlight.js` grammars: c, cpp, sql, javascript, python, yaml, json, xml | 11.9.0 | sha384 | Per-language tokenizers. | Missing → that language degrades to plaintext silently; aggregate warning banner lists which languages failed. |
 | `highlightjs-cobol` | 0.3.1 | sha384 | COBOL grammar. | Same as other grammars. |
 | `html-docx-js` | 0.3.1 | sha384 | DOCX export (Word's altChunk-based HTML embed). The library is functionally complete-but-unmaintained; we use it because no maintained alternative produces a single-file vanilla-JS bundle. | Missing → Export `.docx` button stays disabled with an explanatory tooltip + warning banner. Export `.md` and Export `.html` continue to work. |
+| `exceljs` | 4.4.0 | sha384 | XLSX export — full Excel workbook writer with bold/fill/border styling and per-sheet RTL view. | Missing → Export `.xlsx` button stays disabled with an explanatory tooltip + warning banner. Export `.csv` (single-table path), `.md`, `.html`, `.docx` continue to work. |
+| `jszip` | 3.10.1 | sha384 | ZIP archive writer — used only for multi-table CSV export (N>=2 tables → one CSV per table inside a ZIP). | Missing AND document has multiple tables → Export `.csv` click emits a banner explaining the missing library. Single-table CSV path works without JSZip. |
 | RPG, CL, DDS, ABAP | inline | n/a | Minimal stub grammars registered in the viewer script (no external CDN). | Registered only after hljs core loads. |
 
 ### Progressive degradation matrix
@@ -352,7 +413,10 @@ caught by both per-script `onerror` handlers and a global capture-phase
 | One grammar blocked (e.g. cobol) | yes | yes | partial | all three | Aggregate "Some syntax grammars unavailable" banner. |
 | `DOMPurify` blocked | yes | refused by default | n/a | depends on "Render anyway" | Error banner with **Render anyway (unsafe)** action, scoped to the currently-loaded file. Export of unsafe content triggers a confirm dialog. |
 | `marked` blocked | yes | no | no | none (gated on doc loaded) | Error banner with link to README; UI buttons still respond. |
-| `html-docx-js` blocked | yes | yes | yes | `.md` + `.html` only | Warning banner; `.docx` button disabled with tooltip "Use HTML export and open in Word". |
+| `html-docx-js` blocked | yes | yes | yes | `.md` + `.html` + `.csv` + `.xlsx` | Warning banner; `.docx` button disabled with tooltip "Use HTML export and open in Word". |
+| `exceljs` blocked | yes | yes | yes | `.md` + `.html` + `.docx` + `.csv` | Warning banner; `.xlsx` button disabled with tooltip "XLSX library failed to load — use CSV export instead". |
+| `jszip` blocked, doc has 1 table | yes | yes | yes | all (CSV single-file path works) | No banner — JSZip is only needed for multi-table CSV. |
+| `jszip` blocked, doc has 2+ tables | yes | yes | yes | `.md` + `.html` + `.docx` + `.xlsx`; `.csv` click emits banner | CSV click-time check: emits error banner explaining JSZip is required for multi-table CSV. |
 | **All CDN blocked** | yes | no (until vendor) | no | none | Banners chained: info "Trying ./vendor/..." → final status. Toolbar remains clickable. |
 
 If a CDN script does load but executes incorrectly (proxy injection,
@@ -381,7 +445,7 @@ attempts a local `./vendor/` fallback. The banner sequence is:
 ### Vendoring procedure
 
 Create a `vendor/` folder next to `viewer.html` and drop these
-**four files** (file names are load-bearing — the viewer expects
+**six files** (file names are load-bearing — the viewer expects
 exactly these names):
 
 | Save as | Download from |
@@ -390,6 +454,8 @@ exactly these names):
 | `vendor/purify.min.js`     | `https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js` |
 | `vendor/highlight.min.js`  | `https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js` |
 | `vendor/html-docx.min.js`  | `https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js` |
+| `vendor/exceljs.min.js`    | `https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js` |
+| `vendor/jszip.min.js`      | `https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js` |
 
 PowerShell one-liner (the default shell on Windows per CLAUDE.md):
 
@@ -401,6 +467,8 @@ $dl = @{
   'purify.min.js'    = 'https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js'
   'highlight.min.js' = 'https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js'
   'html-docx.min.js' = 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js'
+  'exceljs.min.js'   = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+  'jszip.min.js'     = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
 }
 foreach ($k in $dl.Keys) {
   Invoke-WebRequest -Uri $dl[$k] -OutFile (Join-Path 'vendor' $k)
@@ -415,6 +483,8 @@ curl -L -o vendor/marked.min.js    https://cdn.jsdelivr.net/npm/marked@5.1.2/mar
 curl -L -o vendor/purify.min.js    https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js
 curl -L -o vendor/highlight.min.js https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js
 curl -L -o vendor/html-docx.min.js https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js
+curl -L -o vendor/exceljs.min.js   https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js
+curl -L -o vendor/jszip.min.js     https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js
 ```
 
 You do **not** need to vendor the per-language hljs grammars or the
@@ -486,6 +556,7 @@ documentation. Wire-in points:
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.5.0 | 2026-06-01 | Table export pipeline added: `Export .csv` / `Export .xlsx`. SRI-pinned `exceljs@4.4.0` and `jszip@3.10.1` with `./vendor/exceljs.min.js` / `./vendor/jszip.min.js` fallback. CSV path: RFC 4180 UTF-8 BOM + CRLF quoting, single-file for N=1 table, ZIP-of-CSVs (`<doc>-tables.zip`) for N>=2 tables. XLSX path: one worksheet per table, bold + slate-700 fill + white header row, slate-300 inner cell borders, per-sheet RTL view, frozen header pane, auto column widths, landscape page setup, all cells forced text format (`numFmt = '@'`) to defeat Excel auto-coercion of version strings / account numbers. Critical+high adversarial fixes folded in: (1) **nested tables skipped** (outer wins) — inner-table textContent leakage bounded by stripping inner `<table>` from cell clones in `extractCellText`; (2) **tables inside `<blockquote>` excluded** (quotations, not data); (3) **tables inside `<details>` use `<summary>` text** as preferred name; (4) **centralized sheet-name resolution** so CSV and XLSX produce identical canonical names (underscore-suffix style `_2`, `_3`); (5) **grapheme-aware truncation** (`Array.from` for code-point safety + trailing combining-mark stripping for Hebrew niqqud / cantillation); (6) **32,767-char cell cap** with `... [truncated]` marker (Excel hard limit, applied to both CSV and XLSX); (7) **CSV formula-injection guard** — cells starting with `=`, `+`, `-`, `@`, `\t`, `\r` get a leading apostrophe to neutralize Excel auto-execution; (8) **NBSP + bidi-mark aware whitespace normalization** so CSV and XLSX agree byte-for-byte on shared content; (9) **NFC cell-text normalization** for decomposed Hebrew round-trips; (10) **apostrophe + reserved name stripping** in sheet names (`'`, `History`); (11) **per-cell text format (`@`)** to prevent date / number auto-coercion of `1.4.4`, `5/2024`, leading-zero account IDs; (12) **soft-cap warning at >50 tables** + lower JSZip compression level when N>20; (13) **truncation-count aggregation** banner so users know if cells were capped. Five-button toolbar export group (Md / Html / Docx / Csv / Xlsx); `beginExport` / `endExport` race-guards extended to all five. Playwright Scenario 8 with 26 assertions covers button presence, enable/disable lifecycle, CSV download (single + multi-table), XLSX download (sheet count, bold header, slate-700 fill, Hebrew preservation, sheet-name derivation), no-tables disable path. |
 | 1.4.0 | 2026-06-01 | Table styling overhaul (MRP v1.2.0): GitHub-grade visual look with dark slate-700 header, subtle slate-50 zebra body, slate-300/400 borders, 8x14 padding. New `--tbl-*` CSS variables driving all three surfaces (viewer / `.html` / `.docx`); `prepareCloneForDocxExport` extended with `inlineTableStylesForDocx` that resolves every var() to a literal hex (Word cannot read `var()`). `.docx` always bakes the light theme (`buildHtmlDocument({forLightTheme:true})` strips the dark-theme block AND forces `data-theme="light"`). Critical+high adversarial fixes folded in: dark-theme code-chip contrast lift, `background-clip:padding-box` to prevent Word/LibreOffice padding divergence, merged-cell zebra neutralization, nested-table double-paint prevention, RTL-text-align specificity raised above `text-align:start`, `unicode-bidi:isolate-override` on code-only cells to defeat Hebrew-in-code re-flipping, dropped table-level border to avoid Word's double-frame quirk, deduplicating `appendInlineStyle`. Playwright Scenario 7 with 31 assertions (viewer light + dark + RTL, HTML export style block + pre-baked zebra, DOCX literal hex + no var() + no dark theme leak). |
 | 1.3.0 | 2026-06-01 | Export pipeline added: `Export .md` / `Export .html` / `Export .docx`. SRI-pinned `html-docx-js` v0.3.1 with `./vendor/html-docx.min.js` fallback. Critical+high adversarial fixes folded in: `State.isExporting` double-click guard, NFC + reserved-char + 120-UTF16 filename sanitization with Hebrew preservation, empty-document gating, large-document (>5MB) warning, `<bdi>` content wrapped in U+2068/U+2069 isolates before DOCX serialization, inline `direction:rtl` style on every `dir=rtl` block (Word honors inline CSS where it ignores the `dir` attribute), inline SVG → `data:image/svg+xml` substitution for Mermaid (with visible fallback marker), Theme button disabled during export (mid-export race), `Render anyway` content propagation confirm dialog, toast confirmation, Dir button label synced to live `html[dir]` on boot, Playwright suite extended with Scenarios 5 (all-buttons-respond) + 6 (round-trip exports), 51 new assertions. |
 | 1.2.0 | 2026-05-31 | Resilience redesign: SRI hashes on every CDN URL, defer + capture-phase error listener, per-library failure registry, `./vendor/` fallback for `marked` / `dompurify` / `highlight.js`, structured Banner DOM (no innerHTML), per-file `Render anyway` opt-in (scoped to current file, cleared on every load), 8s boot watchdog, CSP meta tag, DOMPurify `afterSanitizeAttributes` hook stripping `javascript:`/`data:` on `<a href>` and `<iframe src>`, footer `dir="ltr"` (UAX#9 N1 trailing-period fix), toolbar `dir="ltr" lang="en"`, banner host `dir="ltr"` + sticky, bilingual banner messages (en + he), title `lang="en" dir="ltr"`. |

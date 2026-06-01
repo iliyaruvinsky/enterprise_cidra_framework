@@ -768,9 +768,11 @@ footer { unicode-bidi: isolate; }
        passes"); finally-block resets it and visually re-enables.
        ===================================================================== -->
   <span class="export-group" role="group" aria-label="Export">
-    <button id="btnExportMd"   disabled title="Export current document as .md">Export .md</button>
-    <button id="btnExportHtml" disabled title="Export current document as self-contained .html">Export .html</button>
-    <button id="btnExportDocx" disabled title="Export current document as .docx (Word)">Export .docx</button>
+    <button id="btnExportMd"   disabled aria-disabled="true" title="Export current document as .md">Export .md</button>
+    <button id="btnExportHtml" disabled aria-disabled="true" title="Export current document as self-contained .html">Export .html</button>
+    <button id="btnExportDocx" disabled aria-disabled="true" title="Export current document as .docx (Word)">Export .docx</button>
+    <button id="btnExportCsv"  disabled aria-disabled="true" title="Export document tables as .csv (or .zip if multiple tables)">Export .csv</button>
+    <button id="btnExportXlsx" disabled aria-disabled="true" title="Export document tables as .xlsx (Excel workbook)">Export .xlsx</button>
   </span>
 
   <span id="fileInfo" class="file-info"></span>
@@ -873,6 +875,31 @@ footer { unicode-bidi: isolate; }
   onload="window.__cidraDepLoaded['html-docx']=true;"
   onerror="window.__cidraDepFail['html-docx']=true;"></script>
 
+<!-- OPTIONAL — XLSX export. ExcelJS 4.4.0 (MIT) — full XLSX writer with
+     bold/fill/borders/RTL view styling. Loaded from jsdelivr (matches the
+     CSP script-src allowlist). Failure → Export .xlsx button stays
+     disabled with explanatory tooltip; CSV / DOCX / HTML continue to work.
+     -->
+<script defer data-dep="exceljs"
+  src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
+  integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"
+  onload="window.__cidraDepLoaded['exceljs']=true;"
+  onerror="window.__cidraDepFail['exceljs']=true;"></script>
+
+<!-- OPTIONAL — JSZip 3.10.1 (MIT/GPL-3 dual). Needed only when CSV export
+     produces N>=2 tables (we ship a zip-of-csvs in that case). Loaded from
+     jsdelivr (CSP allowed). Single-table CSV path does NOT depend on JSZip.
+     -->
+<script defer data-dep="jszip"
+  src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+  integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"
+  onload="window.__cidraDepLoaded['jszip']=true;"
+  onerror="window.__cidraDepFail['jszip']=true;"></script>
+
 <script defer>
 (function() {
   'use strict';
@@ -901,6 +928,11 @@ footer { unicode-bidi: isolate; }
     hljs:      function () { return !!window.hljs      && typeof window.hljs.highlight    === 'function'; },
     // html-docx-js is exposed as window.htmlDocx with asBlob().
     htmlDocx:  function () { return !!window.htmlDocx  && typeof window.htmlDocx.asBlob  === 'function'; },
+    // ExcelJS exposes a global ExcelJS object with a Workbook constructor.
+    exceljs:   function () { return !!window.ExcelJS   && typeof window.ExcelJS.Workbook === 'function'; },
+    // JSZip exposes a global JSZip constructor. Only required when CSV
+    // export produces N>=2 tables (zip-of-csvs bundle).
+    jszip:     function () { return !!window.JSZip     && typeof window.JSZip            === 'function'; },
     hasGrammar: function (lang) {
       if (!this.hljs()) return false;
       try { return !!window.hljs.getLanguage(lang); } catch (_) { return false; }
@@ -1066,6 +1098,8 @@ footer { unicode-bidi: isolate; }
     if (!Deps.dompurify()) tasks.push(loadScript('./vendor/purify.min.js').catch(function(){}));
     if (!Deps.hljs())      tasks.push(loadScript('./vendor/highlight.min.js').catch(function(){}));
     if (!Deps.htmlDocx())  tasks.push(loadScript('./vendor/html-docx.min.js').catch(function(){}));
+    if (!Deps.exceljs())   tasks.push(loadScript('./vendor/exceljs.min.js').catch(function(){}));
+    if (!Deps.jszip())     tasks.push(loadScript('./vendor/jszip.min.js').catch(function(){}));
     return Promise.all(tasks);
   }
 
@@ -1666,36 +1700,87 @@ footer { unicode-bidi: isolate; }
 
   // --- Export gating ---------------------------------------------------------
   // Called from render(), btnClear, and after each export attempt.
+  // Five export targets:
+  //   - .md / .html — gated on document loaded.
+  //   - .docx       — also gated on html-docx-js loaded.
+  //   - .csv / .xlsx — also gated on the document containing at least one
+  //                    EXPORTABLE table (see countExportableTables: skip
+  //                    nested inner tables; tables inside <blockquote> are
+  //                    excluded by policy; tables inside <details> are
+  //                    counted — see exportCsv/exportXlsx for full policy).
+  //   - .xlsx       — also gated on ExcelJS loaded.
+  //   - .csv N>=2   — checked at click time (gate at click rather than
+  //                    disable, since we don't know N until walk time).
+  function countExportableTables(rootEl) {
+    if (!rootEl) return 0;
+    const all = rootEl.querySelectorAll('table');
+    let n = 0;
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i];
+      // Skip nested tables (inner tables); outer table wins.
+      if (t.parentElement && t.parentElement.closest && t.parentElement.closest('table')) continue;
+      // Skip tables inside <blockquote> (these are quotations, not data).
+      if (t.closest && t.closest('blockquote')) continue;
+      n += 1;
+    }
+    return n;
+  }
+
   function refreshExportButtons() {
     const btnMd   = document.getElementById('btnExportMd');
     const btnHtml = document.getElementById('btnExportHtml');
     const btnDocx = document.getElementById('btnExportDocx');
+    const btnCsv  = document.getElementById('btnExportCsv');
+    const btnXlsx = document.getElementById('btnExportXlsx');
     // Gate 1: document loaded? (text content non-whitespace AND >0 block
     // children — defends against the "empty document export" finding.)
     const out = document.getElementById('output');
     const hasDoc = State.lastRawMd != null &&
                    out && out.textContent.trim().length > 0 &&
                    out.querySelector('h1,h2,h3,h4,h5,h6,p,pre,table,ul,ol,blockquote') != null;
-    // Gate 2 (DOCX only): html-docx-js available.
+    // Gate 2 (table-based exports): at least one exportable <table>.
+    const tableCount = hasDoc ? countExportableTables(out) : 0;
+    const hasTables = hasDoc && tableCount > 0;
+    // Gate 3 (DOCX only): html-docx-js available.
     const docxOk = hasDoc && Deps.htmlDocx() && !State.isExporting;
-    if (btnMd) {
-      btnMd.disabled = !hasDoc || State.isExporting;
-      btnMd.setAttribute('aria-disabled', String(!hasDoc || State.isExporting));
+    // Gate 4 (XLSX only): ExcelJS available.
+    const xlsxLibOk = Deps.exceljs();
+    const xlsxOk   = hasTables && xlsxLibOk && !State.isExporting;
+    // Gate 5 (CSV): N>=2 also requires JSZip — checked at click time.
+    const csvOk    = hasTables && !State.isExporting;
+
+    function set(btn, enabled, tooltip) {
+      if (!btn) return;
+      btn.disabled = !enabled;
+      btn.setAttribute('aria-disabled', String(!enabled));
+      if (tooltip) btn.title = tooltip;
     }
-    if (btnHtml) {
-      btnHtml.disabled = !hasDoc || State.isExporting;
-      btnHtml.setAttribute('aria-disabled', String(!hasDoc || State.isExporting));
-    }
+    set(btnMd, hasDoc && !State.isExporting,
+        hasDoc ? 'Export current document as .md' : 'Load a document first.');
+    set(btnHtml, hasDoc && !State.isExporting,
+        hasDoc ? 'Export current document as self-contained .html' : 'Load a document first.');
     if (btnDocx) {
-      btnDocx.disabled = !docxOk;
-      btnDocx.setAttribute('aria-disabled', String(!docxOk));
-      if (!Deps.htmlDocx()) {
-        btnDocx.title = 'DOCX export library failed to load — use HTML export and open in Word.';
-      } else if (!hasDoc) {
-        btnDocx.title = 'Load a document first.';
-      } else {
-        btnDocx.title = 'Export current document as .docx (Word).';
-      }
+      let docxTooltip;
+      if (!Deps.htmlDocx())  docxTooltip = 'DOCX export library failed to load — use HTML export and open in Word.';
+      else if (!hasDoc)      docxTooltip = 'Load a document first.';
+      else                   docxTooltip = 'Export current document as .docx (Word).';
+      set(btnDocx, docxOk, docxTooltip);
+    }
+    if (btnCsv) {
+      let csvTooltip;
+      if (!hasDoc)               csvTooltip = 'Load a document first.';
+      else if (!hasTables)       csvTooltip = 'No tables to export from this document.';
+      else if (tableCount === 1) csvTooltip = 'Export document table as .csv';
+      else                       csvTooltip = 'Export ' + tableCount + ' document tables as .zip of .csv files';
+      set(btnCsv, csvOk, csvTooltip);
+    }
+    if (btnXlsx) {
+      let xlsxTooltip;
+      if (!xlsxLibOk)        xlsxTooltip = 'XLSX export library failed to load — use CSV export instead.';
+      else if (!hasDoc)      xlsxTooltip = 'Load a document first.';
+      else if (!hasTables)   xlsxTooltip = 'No tables to export from this document.';
+      else                   xlsxTooltip = 'Export ' + tableCount + ' table' + (tableCount === 1 ? '' : 's') + ' as .xlsx (Excel workbook)';
+      set(btnXlsx, xlsxOk, xlsxTooltip);
     }
   }
 
@@ -1715,8 +1800,8 @@ footer { unicode-bidi: isolate; }
   function beginExport() {
     if (State.isExporting) return false;
     State.isExporting = true;
-    // Mark all three buttons as exporting (for SR + visual state).
-    ['btnExportMd', 'btnExportHtml', 'btnExportDocx'].forEach(function (id) {
+    // Mark all five export buttons as exporting (for SR + visual state).
+    ['btnExportMd', 'btnExportHtml', 'btnExportDocx', 'btnExportCsv', 'btnExportXlsx'].forEach(function (id) {
       const b = document.getElementById(id);
       if (b) {
         b.setAttribute('aria-disabled', 'true');
@@ -1731,7 +1816,7 @@ footer { unicode-bidi: isolate; }
   }
   function endExport(blobUrl) {
     State.isExporting = false;
-    ['btnExportMd', 'btnExportHtml', 'btnExportDocx'].forEach(function (id) {
+    ['btnExportMd', 'btnExportHtml', 'btnExportDocx', 'btnExportCsv', 'btnExportXlsx'].forEach(function (id) {
       const b = document.getElementById(id);
       if (b) { b.removeAttribute('data-exporting'); }
     });
@@ -2264,6 +2349,491 @@ footer { unicode-bidi: isolate; }
   }
 
   // ===========================================================================
+  // 9.6 TABLE EXPORT HELPERS — shared between CSV and XLSX handlers
+  // ===========================================================================
+  // Adversarial findings folded in (multi-table-edge-cases + hebrew-encoding
+  // + cell-content-quirks):
+  //   - CRITICAL: Skip nested tables (outer wins). Inner-table textContent
+  //     leakage is bounded by also stripping inner <table>s from cells
+  //     before extractCellText reads textContent.
+  //   - CRITICAL: Cap cells at Excel's 32,767-char limit (with truncation
+  //     marker); applied to both CSV and XLSX for symmetry.
+  //   - CRITICAL: CSV-injection / formula-injection guard — any cell
+  //     starting with =, +, -, @ gets a leading apostrophe in CSV. For
+  //     XLSX we force string type via ws.addRow which already preserves
+  //     leading characters as text when the cell value is a string.
+  //   - HIGH: Grapheme-aware truncation in sheet names (Array.from for
+  //     code-point safety; strip trailing combining marks).
+  //   - HIGH: Centralize sheet-name resolution so CSV and XLSX produce
+  //     the same final canonical name (consistent collision suffixes).
+  //   - HIGH: Tables inside <blockquote> excluded; tables inside <details>
+  //     included (use <summary> as the preferred sheet-name source).
+  //   - MEDIUM: Whitespace normalization includes NBSP/bidi marks.
+  //   - MEDIUM: NFC normalize cell text.
+  //   - MEDIUM: Strip markdown markers — inline DOM <code>, <strong>,
+  //     <em>, <a> all flatten correctly via textContent.
+
+  // Maximum cell text size — Excel's hard limit. We apply the same cap to
+  // CSV so both formats stay byte-equivalent on shared content.
+  const EXPORT_CELL_MAX = 32767;
+
+  // collectExportTables(rootClone) → Array<{name, table, source}>
+  // Walks a cloned <output> subtree. Skips nested inner tables (outer
+  // wins) and tables inside <blockquote>. For each surviving table,
+  // derives a name from the nearest preceding heading (or <summary> when
+  // the table is inside <details>). Collisions get _2, _3 suffixes in
+  // document order using underscore style (consistent across CSV and
+  // XLSX paths; the XLSX path additionally sanitizes for Excel rules).
+  function collectExportTables(rootClone) {
+    if (!rootClone) return [];
+    const all = Array.prototype.slice.call(rootClone.querySelectorAll('table'));
+    const out = [];
+    const nameCounts = Object.create(null);
+    all.forEach(function (table, idx) {
+      // Adversarial fix: skip nested inner tables (outer table wins).
+      if (table.parentElement && table.parentElement.closest && table.parentElement.closest('table')) return;
+      // Adversarial fix: skip blockquoted tables (quotations, not data).
+      if (table.closest && table.closest('blockquote')) return;
+      // Find the heading source.
+      let source = 'heading';
+      let nameText = null;
+      // If table is inside <details>, prefer the <summary> text.
+      const detailsAncestor = table.closest && table.closest('details');
+      if (detailsAncestor) {
+        const summary = detailsAncestor.querySelector('summary');
+        if (summary && summary.textContent.trim()) {
+          nameText = summary.textContent.trim();
+          source = 'details-summary';
+        }
+      }
+      if (!nameText) {
+        // Walk backward through previousElementSibling / parentNode chain
+        // to find the nearest preceding heading.
+        let heading = null;
+        let node = table;
+        while (node && !heading) {
+          let sib = node.previousElementSibling;
+          while (sib && !heading) {
+            if (/^H[1-6]$/.test(sib.tagName)) { heading = sib; break; }
+            const inner = sib.querySelector && sib.querySelector('h1,h2,h3,h4,h5,h6');
+            if (inner) { heading = inner; break; }
+            sib = sib.previousElementSibling;
+          }
+          node = node.parentNode;
+          if (!node || node === rootClone || node === document.body) break;
+        }
+        if (heading && heading.textContent.trim()) {
+          nameText = heading.textContent.trim();
+        } else {
+          nameText = 'Table_' + (idx + 1);
+          source = 'fallback';
+        }
+      }
+      // NFC + filesystem-safe normalization.
+      try { nameText = nameText.normalize('NFC'); } catch (_) {}
+      let baseName = nameText.replace(/[\\\/:*?"<>|\x00-\x1f]/g, '_')
+                             .replace(/\s+/g, ' ')
+                             .replace(/_+/g, '_')
+                             .replace(/^[\s_]+|[\s_]+$/g, '');
+      if (!baseName) baseName = 'Table_' + (idx + 1);
+      // Grapheme-aware cap at 80 codepoints for CSV filenames (XLSX
+      // sheet names re-cap at 31 in sanitizeSheetName).
+      baseName = truncateCodePoints(baseName, 80);
+      // Collision suffix in underscore style (avoids bidi-reorder
+      // surprises with Hebrew base + ' (N)' Excel-style suffix).
+      const key = baseName.toLowerCase();
+      nameCounts[key] = (nameCounts[key] || 0) + 1;
+      const finalName = nameCounts[key] === 1 ? baseName : baseName + '_' + nameCounts[key];
+      out.push({ name: finalName, table: table, source: source });
+    });
+    return out;
+  }
+
+  // truncateCodePoints(s, maxCodePoints)
+  // Code-point-aware truncation (handles surrogate pairs). After
+  // truncation, strip trailing combining marks (Hebrew niqqud /
+  // cantillation, general combining diacritics) so we never leave a
+  // stranded combiner. Re-normalize to NFC.
+  function truncateCodePoints(s, maxCodePoints) {
+    if (!s) return '';
+    let arr;
+    try { arr = Array.from(s); } catch (_) { arr = s.split(''); }
+    if (arr.length <= maxCodePoints) return s;
+    let out = arr.slice(0, maxCodePoints).join('');
+    // Strip trailing combining marks (covers general combining range
+    // U+0300-U+036F, Hebrew points/cantillation U+0591-U+05BD/U+05BF/
+    // U+05C1-U+05C2/U+05C4-U+05C7, and other common combining ranges).
+    out = out.replace(/[̀-֑ͯ-ֽֿׁׂׄ-ׇؐ-ًؚ-ٰٟۖ-ۜ۟-ۤۧ-۪ۨ-ۭ⃐-⃿]+$/g, '');
+    try { out = out.normalize('NFC'); } catch (_) {}
+    return out;
+  }
+
+  // extractCellText(cell) → String
+  // Strips inline markdown markers (already rendered as DOM) and returns
+  // plain text. Hebrew + bidi marks preserved (per design); NBSP / other
+  // whitespace collapsed; <br> → \n; <a href> → "text (href)" when text
+  // differs from href; nested <table> stripped (already exported as own
+  // sheet); NFC normalize; cap at EXPORT_CELL_MAX.
+  function extractCellText(cell) {
+    if (!cell) return '';
+    const c = cell.cloneNode(true);
+    // Adversarial fix: strip nested tables — they're exported separately
+    // via collectExportTables. Their textContent flattening would put a
+    // garbled concatenation into the outer cell.
+    Array.prototype.forEach.call(c.querySelectorAll('table'), function (t) {
+      const placeholder = c.ownerDocument.createTextNode('[nested table]');
+      if (t.parentNode) t.parentNode.replaceChild(placeholder, t);
+    });
+    // <br> → newline
+    Array.prototype.forEach.call(c.querySelectorAll('br'), function (br) {
+      br.parentNode.replaceChild(c.ownerDocument.createTextNode('\n'), br);
+    });
+    // <a href> → "text (href)" only when href differs from text.
+    Array.prototype.forEach.call(c.querySelectorAll('a[href]'), function (a) {
+      const text = (a.textContent || '').trim();
+      let href = a.getAttribute('href') || '';
+      // Strip mailto:/tel: schemes for display; skip suffix for anchors.
+      const isAnchor = /^#/.test(href);
+      const display = href.replace(/^(mailto|tel):/i, '');
+      let replacement;
+      if (isAnchor) {
+        replacement = text || display;
+      } else if (text && href && text !== href && text !== display) {
+        replacement = text + ' (' + display + ')';
+      } else {
+        replacement = text || display;
+      }
+      a.parentNode.replaceChild(c.ownerDocument.createTextNode(replacement), a);
+    });
+    let text = c.textContent || '';
+    // NFC normalize — handles decomposed Hebrew copy-pasted from various
+    // sources.
+    try { text = text.normalize('NFC'); } catch (_) {}
+    // Whitespace collapse with NBSP awareness.   = NBSP,   =
+    // narrow NBSP. Bidi marks (‎/‏/‪-‮) preserved for
+    // RTL ordering integrity.
+    text = text.replace(/[  ]/g, ' ')
+               .replace(/[ \t\f\v]+/g, ' ')
+               .replace(/ *\n */g, '\n')
+               .replace(/^\s+|\s+$/g, '');
+    // Cap at Excel's 32,767-char limit (also applied to CSV for symmetry).
+    if (text.length > EXPORT_CELL_MAX) {
+      text = text.slice(0, EXPORT_CELL_MAX - 16) + '... [truncated]';
+    }
+    return text;
+  }
+
+  // csvSafeField(s) — defuse Excel formula injection in CSV.
+  // Cells starting with =, +, -, @, \t, \r get a leading apostrophe so
+  // Excel treats them as literal text on import.
+  function csvSafeField(s) {
+    if (s && /^[=+\-@\t\r]/.test(s)) return "'" + s;
+    return s;
+  }
+
+  // csvQuote(field) → String
+  // RFC 4180 conditional quoting: quote only if field contains comma,
+  // double quote, CR, LF, or has leading/trailing whitespace. Escape
+  // internal " by doubling. The injection guard runs first.
+  function csvQuote(field) {
+    let s = String(field == null ? '' : field);
+    s = csvSafeField(s);
+    if (s === '') return '';
+    if (/[",\r\n]|^\s|\s$/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  // tableHeaderCells(table) → Array<HTMLElement>
+  // Header collection — prefer <thead>, fall back to first row with <th>.
+  function tableHeaderCells(table) {
+    if (table.tHead && table.tHead.rows.length) {
+      return Array.prototype.slice.call(table.tHead.rows[0].cells);
+    }
+    if (table.rows.length && table.rows[0].querySelector('th')) {
+      return Array.prototype.slice.call(table.rows[0].cells);
+    }
+    return [];
+  }
+
+  // tableBodyRows(table, headerCells) → Array<HTMLTableRowElement>
+  function tableBodyRows(table, headerCells) {
+    if (table.tBodies && table.tBodies.length) {
+      return Array.prototype.slice.call(table.tBodies).reduce(function (acc, tb) {
+        return acc.concat(Array.prototype.slice.call(tb.rows));
+      }, []);
+    }
+    return Array.prototype.slice.call(table.rows).filter(function (r) {
+      return headerCells.length === 0 || r !== table.rows[0];
+    });
+  }
+
+  // tableToCsv(table) → String (CRLF-separated, no BOM — caller prepends)
+  function tableToCsv(table) {
+    const lines = [];
+    const headerCells = tableHeaderCells(table);
+    if (headerCells.length) {
+      lines.push(headerCells.map(function (c) { return csvQuote(extractCellText(c)); }).join(','));
+    }
+    const bodyRows = tableBodyRows(table, headerCells);
+    bodyRows.forEach(function (row) {
+      const cells = Array.prototype.slice.call(row.cells);
+      if (cells.length === 0) return; // skip empty <tr>
+      lines.push(cells.map(function (c) { return csvQuote(extractCellText(c)); }).join(','));
+    });
+    return lines.join('\r\n');
+  }
+
+  // sanitizeSheetName(name) → String
+  // Excel sheet name rules: max 31 chars, must not contain \ / ? * [ ] :
+  // Apostrophe stripped (forbidden at start/end; breaks formula refs).
+  // Reserved name "History" forbidden by Excel.
+  // Empty after sanitization → "Sheet".
+  function sanitizeSheetName(name) {
+    let s = String(name == null ? '' : name);
+    try { s = s.normalize('NFC'); } catch (_) {}
+    s = s.replace(/[\\\/\?\*\[\]:]/g, '_')
+         .replace(/'/g, '_')
+         .replace(/\s+/g, ' ')
+         .replace(/^\s+|\s+$/g, '');
+    // Grapheme-safe truncation at 31 codepoints.
+    s = truncateCodePoints(s, 31);
+    s = s.replace(/\s+$/, '');
+    if (!s) s = 'Sheet';
+    if (s.toLowerCase() === 'history') s = 'Sheet';
+    return s;
+  }
+
+  // resolveSheetCollision(base, used) → final unique sheet name
+  // Reserves room for _N suffix and re-truncates to 31. Falls back to a
+  // random suffix when N exceeds 999.
+  function resolveSheetCollision(base, used) {
+    let candidate = base;
+    if (!used[candidate.toLowerCase()]) return candidate;
+    for (let n = 2; n < 1000; n++) {
+      const suffix = '_' + n;
+      const reserved = 31 - suffix.length;
+      const trimmed = base.length > reserved ? truncateCodePoints(base, reserved) : base;
+      candidate = (trimmed.replace(/\s+$/, '') || 'Sheet') + suffix;
+      if (!used[candidate.toLowerCase()]) return candidate;
+    }
+    // Random-hex fallback.
+    const hex = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
+    candidate = truncateCodePoints(base, 31 - 5) + '_' + hex;
+    return candidate;
+  }
+
+  function exportCsv() {
+    if (!beginExport()) return;
+    let asyncOwnsLock = false;
+    let blobUrl = null;
+    try {
+      if (!confirmUnsafeIfNeeded('csv')) return;
+      if (State.lastRawMd == null) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      const clone = snapshotRenderedClone();
+      const tables = collectExportTables(clone);
+      if (tables.length === 0) {
+        Banner.warning('export-no-tables', [{text: 'No tables found in this document — nothing to export as CSV.'}]);
+        return;
+      }
+      const BOM = '﻿';
+      if (tables.length === 1) {
+        const csv = BOM + tableToCsv(tables[0].table);
+        const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+        const filename = buildExportFilename(State.lastFileName, 'csv');
+        blobUrl = triggerDownload(blob, filename);
+        showToast('Exported ' + filename);
+        return;
+      }
+      // Multi-table path — requires JSZip.
+      if (!Deps.jszip()) {
+        Banner.error('export-csv', [{text: 'CSV export of multiple tables requires JSZip, which failed to load.'}]);
+        return;
+      }
+      const zip = new window.JSZip();
+      const usedNames = Object.create(null);
+      tables.forEach(function (t) {
+        let entryName = t.name;
+        let suffix = 2;
+        while (usedNames[entryName.toLowerCase() + '.csv']) {
+          entryName = t.name + '_' + suffix;
+          suffix += 1;
+          if (suffix > 999) break;
+        }
+        usedNames[entryName.toLowerCase() + '.csv'] = true;
+        const csv = BOM + tableToCsv(t.table);
+        zip.file(entryName + '.csv', csv);
+      });
+      // Reduce compression level when many tables to keep generation
+      // snappy (text deflate gains are marginal vs. perf cost).
+      const compressionLevel = tables.length > 20 ? 1 : 6;
+      asyncOwnsLock = true;
+      zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: compressionLevel}})
+        .then(function (zipBlob) {
+          const filename = buildExportFilename(State.lastFileName, 'zip');
+          const taggedName = filename.replace(/\.zip$/i, '-tables.zip');
+          const dlUrl = triggerDownload(zipBlob, taggedName);
+          showToast('Exported ' + taggedName + ' (' + tables.length + ' tables)');
+          setTimeout(function () {
+            try { URL.revokeObjectURL(dlUrl); } catch (_) {}
+          }, 1500);
+        })
+        .catch(function (err) {
+          Banner.error('export-csv', [{text: 'CSV zip export failed: ' + String(err && err.message || err)}]);
+        })
+        .then(function () {
+          if (State.isExporting) endExport(null);
+        });
+    } catch (err) {
+      Banner.error('export-csv', [{text: 'CSV export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      if (!asyncOwnsLock) endExport(blobUrl);
+    }
+  }
+
+  function exportXlsx() {
+    if (!beginExport()) return;
+    let asyncOwnsLock = false;
+    let blobUrl = null;
+    try {
+      if (!confirmUnsafeIfNeeded('xlsx')) return;
+      if (!Deps.exceljs()) {
+        Banner.error('export-xlsx', [{text: 'XLSX library failed to load — use CSV or HTML export instead.'}]);
+        return;
+      }
+      if (State.lastRawMd == null) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      const clone = snapshotRenderedClone();
+      const tables = collectExportTables(clone);
+      if (tables.length === 0) {
+        Banner.warning('export-no-tables', [{text: 'No tables found in this document — nothing to export as XLSX.'}]);
+        return;
+      }
+      // Soft-cap warning: many tables can lock the UI for several seconds.
+      if (tables.length > 50) {
+        Banner.warning('export-xlsx-many', [{text: 'Document contains ' + tables.length + ' tables; XLSX generation may take a while.'}]);
+      }
+      const wb = new window.ExcelJS.Workbook();
+      wb.creator = 'CIDRA Viewer';
+      wb.created = new Date();
+      const HEADER_BG_ARGB = 'FF' + TABLE_LITERALS.headerBg.replace(/^#/, '').toUpperCase();
+      const HEADER_FG_ARGB = 'FF' + TABLE_LITERALS.headerFg.replace(/^#/, '').toUpperCase();
+      const BORDER_INNER_ARGB = 'FF' + TABLE_LITERALS.borderInner.replace(/^#/, '').toUpperCase();
+      const BORDER_OUTER_ARGB = 'FF' + TABLE_LITERALS.borderOuter.replace(/^#/, '').toUpperCase();
+      const usedSheetNames = Object.create(null);
+      // Track whether any cell hit the truncation cap so we can surface a
+      // single aggregated banner at the end.
+      let truncCount = 0;
+      tables.forEach(function (t) {
+        const base = sanitizeSheetName(t.name);
+        const sheetName = resolveSheetCollision(base, usedSheetNames);
+        usedSheetNames[sheetName.toLowerCase()] = true;
+        const isRtl = resolveDirection(t.table) === 'rtl';
+        const ws = wb.addWorksheet(sheetName, {
+          views: [{ rightToLeft: isRtl, state: 'normal' }]
+        });
+        const headerCells = tableHeaderCells(t.table);
+        const bodyRows = tableBodyRows(t.table, headerCells);
+        const colWidths = [];
+        function trackWidth(colIdx, text) {
+          const len = Math.min(50, (text || '').length + 2);
+          if (!colWidths[colIdx] || colWidths[colIdx] < len) colWidths[colIdx] = len;
+        }
+        function textForCell(c, colIdx) {
+          let text = extractCellText(c);
+          if (text.length >= EXPORT_CELL_MAX - 16) truncCount += 1;
+          trackWidth(colIdx, text);
+          return text;
+        }
+        if (headerCells.length) {
+          const headerRow = ws.addRow(headerCells.map(function (c, i) { return textForCell(c, i); }));
+          headerRow.font = { bold: true, color: { argb: HEADER_FG_ARGB } };
+          headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: HEADER_BG_ARGB }
+          };
+          headerRow.alignment = {
+            vertical: 'middle',
+            horizontal: isRtl ? 'right' : 'left',
+            wrapText: true,
+            readingOrder: isRtl ? 'rtl' : 'ltr'
+          };
+          headerRow.eachCell({includeEmpty: true}, function (cell) {
+            // Force text format so account numbers / version strings like
+            // "1.4.4" or "5/2024" are not auto-coerced to dates.
+            cell.numFmt = '@';
+            cell.border = {
+              top:    { style: 'thin', color: { argb: BORDER_OUTER_ARGB } },
+              bottom: { style: 'thin', color: { argb: BORDER_OUTER_ARGB } },
+              left:   { style: 'thin', color: { argb: BORDER_OUTER_ARGB } },
+              right:  { style: 'thin', color: { argb: BORDER_OUTER_ARGB } }
+            };
+          });
+        }
+        bodyRows.forEach(function (tr) {
+          const cells = Array.prototype.slice.call(tr.cells);
+          if (cells.length === 0) return;
+          const row = ws.addRow(cells.map(function (c, i) { return textForCell(c, i); }));
+          row.alignment = {
+            vertical: 'top',
+            horizontal: isRtl ? 'right' : 'left',
+            wrapText: true,
+            readingOrder: isRtl ? 'rtl' : 'ltr'
+          };
+          row.eachCell({includeEmpty: true}, function (cell) {
+            cell.numFmt = '@';
+            cell.border = {
+              top:    { style: 'hair', color: { argb: BORDER_INNER_ARGB } },
+              bottom: { style: 'hair', color: { argb: BORDER_INNER_ARGB } },
+              left:   { style: 'hair', color: { argb: BORDER_INNER_ARGB } },
+              right:  { style: 'hair', color: { argb: BORDER_INNER_ARGB } }
+            };
+          });
+        });
+        colWidths.forEach(function (w, i) {
+          if (w && ws.columns[i]) ws.columns[i].width = Math.max(8, w);
+        });
+        if (headerCells.length) {
+          ws.views = [Object.assign({}, ws.views[0], { state: 'frozen', ySplit: 1 })];
+        }
+        // Page setup — landscape + fit-to-width helps wide tables print
+        // reasonably on A4 / Letter.
+        ws.pageSetup = { orientation: 'landscape', fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+      });
+      asyncOwnsLock = true;
+      wb.xlsx.writeBuffer().then(function (buf) {
+        const blob = new Blob([buf], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        const filename = buildExportFilename(State.lastFileName, 'xlsx');
+        const dlUrl = triggerDownload(blob, filename);
+        showToast('Exported ' + filename + ' (' + tables.length + ' sheet' + (tables.length === 1 ? '' : 's') + ')');
+        if (truncCount > 0) {
+          Banner.warning('export-xlsx-truncated', [{text: truncCount + ' cell(s) exceeded Excel\'s 32,767-character limit and were truncated.'}]);
+        }
+        setTimeout(function () {
+          try { URL.revokeObjectURL(dlUrl); } catch (_) {}
+        }, 1500);
+      }).catch(function (err) {
+        Banner.error('export-xlsx', [{text: 'XLSX export failed: ' + String(err && err.message || err)}]);
+      }).then(function () {
+        if (State.isExporting) endExport(null);
+      });
+    } catch (err) {
+      Banner.error('export-xlsx', [{text: 'XLSX export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      if (!asyncOwnsLock) endExport(blobUrl);
+    }
+  }
+
+  // ===========================================================================
   // 10. WIRE UI — runs UNCONDITIONALLY at DOMContentLoaded, never gated on
   // dependency state. The toolbar buttons always work; rendering paths
   // are gated separately inside render().
@@ -2353,6 +2923,10 @@ footer { unicode-bidi: isolate; }
     if (btnExportHtml) btnExportHtml.addEventListener('click', exportHtml);
     const btnExportDocx = $('btnExportDocx');
     if (btnExportDocx) btnExportDocx.addEventListener('click', exportDocx);
+    const btnExportCsv = $('btnExportCsv');
+    if (btnExportCsv) btnExportCsv.addEventListener('click', exportCsv);
+    const btnExportXlsx = $('btnExportXlsx');
+    if (btnExportXlsx) btnExportXlsx.addEventListener('click', exportXlsx);
 
     // Initial pass: buttons disabled because no document loaded.
     refreshExportButtons();
@@ -2445,6 +3019,17 @@ footer { unicode-bidi: isolate; }
     } else {
       Banner.clear('no-htmldocx-final');
     }
+    // XLSX library — gate the Export .xlsx button only, never block other UI.
+    if (!Deps.exceljs()) {
+      Banner.warning('no-exceljs-final', [
+        {bilingual: {
+          en: 'XLSX export library (ExcelJS) unavailable. Export .csv still works (single CSV path); .xlsx is disabled.',
+          he: 'ספריית ייצוא XLSX (ExcelJS) לא זמינה. ייצוא .csv עובד (קובץ יחיד); ייצוא .xlsx מושבת.'
+        }}
+      ]);
+    } else {
+      Banner.clear('no-exceljs-final');
+    }
     // Re-evaluate export gating now that we know the final dep status.
     refreshExportButtons();
 
@@ -2471,7 +3056,9 @@ footer { unicode-bidi: isolate; }
     const failed = window.__cidraDepFail || {};
     const cdnBlockedSilently = !failed.marked && !Deps.marked();
     const needsFallback = failed.marked || failed.dompurify || failed.hljs || failed['html-docx']
-                       || !Deps.marked() || !Deps.dompurify() || !Deps.hljs() || !Deps.htmlDocx();
+                       || failed.exceljs || failed.jszip
+                       || !Deps.marked() || !Deps.dompurify() || !Deps.hljs() || !Deps.htmlDocx()
+                       || !Deps.exceljs() || !Deps.jszip();
 
     if (!needsFallback) {
       reportDepStatus();
@@ -2537,6 +3124,7 @@ footer { unicode-bidi: isolate; }
     deps: Deps,
     state: State,
     loadFile: loadFile,
+    render: render,
     Banner: Banner,
     boot: boot,
     failures: function () { return Object.assign({}, window.__cidraDepFail); },
@@ -2553,7 +3141,14 @@ footer { unicode-bidi: isolate; }
       // inspect the resulting inline styles without round-tripping
       // through html-docx-js.
       inlineTableStylesForDocx: inlineTableStylesForDocx,
-      prepareCloneForHtmlExport: prepareCloneForHtmlExport
+      prepareCloneForHtmlExport: prepareCloneForHtmlExport,
+      // Scenario 8 — table-export pipeline surface.
+      collectExportTables: collectExportTables,
+      sanitizeSheetName: sanitizeSheetName,
+      truncateCodePoints: truncateCodePoints,
+      tableToCsv: tableToCsv,
+      countExportableTables: countExportableTables,
+      extractCellText: extractCellText
     }
   });
 
