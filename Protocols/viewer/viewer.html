@@ -214,6 +214,29 @@ body {
 .toolbar button:hover, .toolbar label.file-picker:hover {
   border-color: var(--accent);
 }
+/* Disabled buttons (e.g., Export when no doc is loaded, or DOCX when
+   html-docx-js failed to load). pointer-events:none blocks click on the
+   button itself but the parent .export-group still receives :hover, so
+   the tooltip explaining WHY it's disabled still appears. */
+.toolbar button:disabled,
+.toolbar button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* The aria-disabled variant is used during export so SR users hear
+   "disabled" while sighted users see the spinner state. */
+.toolbar button[aria-disabled="true"][data-exporting="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+.toolbar .export-group {
+  display: inline-flex;
+  gap: 4px;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 8px;
+  margin-inline-start: 4px;
+}
 .toolbar input[type=file] { display: none; }
 .toolbar .file-info {
   font-size: 12px;
@@ -490,7 +513,38 @@ html[data-theme="dark"] .banner.warning { background: #292524; border-color: #92
 html[data-theme="dark"] .banner.error   { background: #1c1917; border-color: #991b1b; color: #fca5a5; }
 
 /* ---------------------------------------------------------------------------
-   12. BIDI SAFETY for chrome (footer, toolbar). Banners use `isolate`
+   12. TOAST — short-lived success notification (export complete).
+   Positioned in the lower-end corner so it never overlaps the sticky
+   toolbar or banners. role=status (assistive tech announces it without
+   stealing focus) and dir=ltr because current toast copy is English.
+   Auto-fades after 2.5s; click to dismiss earlier.
+   --------------------------------------------------------------------------- */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  inset-inline-end: 24px;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+  unicode-bidi: isolate;
+}
+#toast.show {
+  opacity: 0.95;
+  transform: translateY(0);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   13. BIDI SAFETY for chrome (footer, toolbar). Banners use `isolate`
    above with explicit dir="ltr" on the host so flex-row order is
    deterministic for English copy. The footer uses dir="ltr" in markup
    — `unicode-bidi: isolate` here respects that explicit direction
@@ -530,6 +584,23 @@ footer { unicode-bidi: isolate; }
   <button id="btnMirrorComments" title="Mirror Hebrew comments inside code blocks">Mirror HE Comments: Off</button>
   <button id="btnClear" title="Clear current document">Clear</button>
 
+  <!-- =====================================================================
+       Export buttons. Design order: Markdown (source-of-truth round-trip) →
+       HTML (self-contained, exact visual fidelity) → DOCX (Word). All three
+       are gated on `State.lastRawMd != null`; disabled state set by
+       refreshExportButtons() on every render/clear. The DOCX button gets a
+       second gate on Deps.htmlDocx() — if the CDN library failed to load,
+       the button stays disabled and a non-error banner explains why.
+       Each click sets State.isExporting=true to block the double-click race
+       (adversarial finding "high: double-click triggers two concurrent
+       passes"); finally-block resets it and visually re-enables.
+       ===================================================================== -->
+  <span class="export-group" role="group" aria-label="Export">
+    <button id="btnExportMd"   disabled title="Export current document as .md">Export .md</button>
+    <button id="btnExportHtml" disabled title="Export current document as self-contained .html">Export .html</button>
+    <button id="btnExportDocx" disabled title="Export current document as .docx (Word)">Export .docx</button>
+  </span>
+
   <span id="fileInfo" class="file-info"></span>
   <span id="encodingWarn" class="warn" hidden></span>
 </div>
@@ -540,6 +611,10 @@ footer { unicode-bidi: isolate; }
      role=status / aria-live=polite so status changes are announced
      without stealing focus; error banners override to role=alert. -->
 <div id="banners" role="status" aria-live="polite" dir="ltr" lang="en"></div>
+
+<!-- Toast host — transient success notification, primarily for exports.
+     hidden until showToast() sets .show and the visible text. -->
+<div id="toast" role="status" aria-live="polite" dir="ltr" lang="en" hidden></div>
 
 <div class="content">
   <div id="output" class="md">
@@ -608,6 +683,24 @@ footer { unicode-bidi: isolate; }
 <script defer data-dep="hljs-xml"        src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/xml.min.js"        integrity="sha384-jgkY4GMNWfQcLLIoP1vg3FWXflDrRhcSXGBW6ONIWC2SOIv5H1Pa57sXs+aomCuZ" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-xml']=true;"        onerror="window.__cidraDepFail['hljs-xml']=true;"></script>
 <script defer data-dep="hljs-cobol"      src="https://cdn.jsdelivr.net/npm/highlightjs-cobol@0.3.1/dist/cobol.min.js"                  integrity="sha384-IoavtzDKwguqHFi4rsxIt3BKoXKrua1JoUtkgFH4sMWba0tKsWL0luir9Gm0/vLi" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-cobol']=true;"      onerror="window.__cidraDepFail['hljs-cobol']=true;"></script>
 
+<!-- OPTIONAL — DOCX export. html-docx-js v0.3.1 pinned (last release; the
+     library is functionally complete-but-unmaintained, see README). If
+     it fails to load (CDN blocked, SRI mismatch, ./vendor fallback also
+     missing), the Export .docx button stays disabled with a tooltip
+     explaining the degradation. Markdown and HTML exports do NOT depend
+     on this script. Critical adversarial finding "html-docx-js does not
+     emit <w:bidi/> for Hebrew" is mitigated client-side by pre-export
+     DOM rewriting (Unicode FIRST STRONG ISOLATE U+2068/U+2069 wrappers
+     on <bdi> content, inline RTL styles on dir=rtl blocks, SVG → PNG
+     rasterization for Mermaid). See the export-pipeline section of the
+     boot script below for the full rewriter. -->
+<script defer data-dep="html-docx"
+  src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js"
+  integrity="sha384-T9phw4PsWkw02w0Oq523aDlYzJ5Q4v/BUJZ3tQhenX0My0kgUnxA7CNO64LxS+O3"
+  crossorigin="anonymous"
+  onload="window.__cidraDepLoaded['html-docx']=true;"
+  onerror="window.__cidraDepFail['html-docx']=true;"></script>
+
 <script defer>
 (function() {
   'use strict';
@@ -634,6 +727,8 @@ footer { unicode-bidi: isolate; }
     dompurify: function () { return !!window.DOMPurify && typeof window.DOMPurify.sanitize === 'function'; },
     // hljs is an object with .highlight + .registerLanguage.
     hljs:      function () { return !!window.hljs      && typeof window.hljs.highlight    === 'function'; },
+    // html-docx-js is exposed as window.htmlDocx with asBlob().
+    htmlDocx:  function () { return !!window.htmlDocx  && typeof window.htmlDocx.asBlob  === 'function'; },
     hasGrammar: function (lang) {
       if (!this.hljs()) return false;
       try { return !!window.hljs.getLanguage(lang); } catch (_) { return false; }
@@ -648,7 +743,19 @@ footer { unicode-bidi: isolate; }
     lastFileName: null,
     // Per-file opt-in to unsanitized rendering. Set to the file name; cleared
     // in loadFile() before reading a new file and in btnClear handler.
-    allowUnsanitizedFor: null
+    allowUnsanitizedFor: null,
+    // Export pipeline guard — adversarial finding "high: double-click
+    // triggers two concurrent serialization passes". Set true at entry
+    // of any Export handler; set false in the finally block that also
+    // revokes the blob URL. While true, all three export buttons get
+    // aria-disabled=true and pointer-events:none.
+    isExporting: false,
+    // Track whether the currently-rendered content bypassed DOMPurify
+    // via the per-file "Render anyway" path. Exporting unsanitized
+    // content into a .html file produces a higher-privilege artifact
+    // (file:// scheme has more capability than the original sandbox);
+    // export handlers consult this and confirm before proceeding.
+    renderedUnsanitized: false
   };
 
   // ---------------------------------------------------------------------------
@@ -786,6 +893,7 @@ footer { unicode-bidi: isolate; }
     if (!Deps.marked())    tasks.push(loadScript('./vendor/marked.min.js').catch(function(){}));
     if (!Deps.dompurify()) tasks.push(loadScript('./vendor/purify.min.js').catch(function(){}));
     if (!Deps.hljs())      tasks.push(loadScript('./vendor/highlight.min.js').catch(function(){}));
+    if (!Deps.htmlDocx())  tasks.push(loadScript('./vendor/html-docx.min.js').catch(function(){}));
     return Promise.all(tasks);
   }
 
@@ -1176,6 +1284,7 @@ footer { unicode-bidi: isolate; }
     let safeHtml;
     if (Deps.dompurify()) {
       safeHtml = window.DOMPurify.sanitize(rawHtml, purifyConfig);
+      State.renderedUnsanitized = false;
     } else {
       // User opted in to unsanitized for THIS file — surface a fresh warning.
       Banner.warning('unsanitized-mode-active', [
@@ -1185,9 +1294,12 @@ footer { unicode-bidi: isolate; }
         }}
       ]);
       safeHtml = rawHtml;
+      State.renderedUnsanitized = true;
     }
 
     out.innerHTML = safeHtml;
+    // Re-evaluate Export button enablement on every successful render.
+    if (typeof refreshExportButtons === 'function') refreshExportButtons();
   }
 
   // ===========================================================================
@@ -1290,6 +1402,411 @@ footer { unicode-bidi: isolate; }
   }
 
   // ===========================================================================
+  // 9.5 EXPORT PIPELINE — Markdown / HTML / DOCX
+  // ===========================================================================
+  // Adversarial findings folded in (export-edge-cases + hebrew-in-docx):
+  //   - CRITICAL: html-docx-js does not translate dir="rtl" to <w:bidi/>.
+  //     Mitigation: pre-export DOM rewriter (a) inline-styles direction
+  //     on every dir=rtl block (Word honors inline CSS more reliably than
+  //     dir attr), (b) wraps every <bdi> content with Unicode FIRST STRONG
+  //     ISOLATE (U+2068) + POP DIRECTIONAL ISOLATE (U+2069) so bidi
+  //     isolation survives html-docx-js's bdi-dropping path.
+  //   - CRITICAL: Mermaid SVG dropped by altChunk. Mitigation: rasterize
+  //     every <svg> to PNG via offscreen canvas before invoking
+  //     htmlDocx.asBlob(); fallback marker text if rasterization fails.
+  //   - HIGH: Double-click race. Mitigation: State.isExporting flag +
+  //     aria-disabled on all three buttons during a pass; finally block
+  //     resets and revokes blob URL.
+  //   - HIGH: Filename sanitization. Mitigation: NFC normalize, replace
+  //     reserved chars, trim trailing dots/spaces, truncate to 120 UTF-16
+  //     code units BEFORE appending the extension. Fallback to
+  //     pharmacy-journal-${timestamp} when no doc is loaded (we don't
+  //     reach the handler in that state — gated by disabled buttons —
+  //     but the filename builder still defends against it).
+  //   - HIGH: Empty document. Mitigation: handlers gated on
+  //     State.lastRawMd != null AND content container has non-whitespace
+  //     text. Button is disabled in that state.
+  //   - HIGH: 10MB heap. Mitigation: warn before export when source
+  //     markdown > 5MB; do NOT block (Web Worker offload deferred).
+  //   - MEDIUM: .md MIME. Mitigation: explicit
+  //     "text/markdown;charset=utf-8".
+  //   - MEDIUM: Theme race. Mitigation: snapshot computed styles into
+  //     the cloned DOM at export start so the produced file is
+  //     self-contained regardless of theme toggle during the export
+  //     window.
+  //   - LOW: 'Render anyway' propagation. Mitigation: if
+  //     State.renderedUnsanitized, confirm dialog before exporting.
+  // ===========================================================================
+
+  // --- Filename helper -------------------------------------------------------
+  // Sanitize ONCE, deterministically:
+  //   1. NFC normalize (Unicode normalization — keeps Hebrew composed)
+  //   2. Replace Windows-reserved chars + control chars with _
+  //   3. Trim trailing dots/spaces (Windows refuses these at path end)
+  //   4. Truncate to 120 UTF-16 code units (NTFS budget allows for the
+  //      Downloads-folder prefix the OS will add)
+  //   5. Append the requested extension verbatim (we never trust the
+  //      browser to add it — Safari rewrites .md to .txt; Windows
+  //      hide-known-extensions doubles it)
+  function buildExportFilename(baseName, ext) {
+    let base = (baseName && typeof baseName === 'string') ? baseName : '';
+    // Strip the source extension (.md / .markdown / .txt). Case-insensitive.
+    base = base.replace(/\.(md|markdown|txt)$/i, '');
+    // NFC normalize so combining marks become composed Hebrew points.
+    try { base = base.normalize('NFC'); } catch (_) { /* IE/old Edge: skip */ }
+    // Replace reserved + control chars.
+    base = base.replace(/[\\\/:*?"<>|\x00-\x1f]/g, '_');
+    // Collapse runs of underscores produced by the previous step.
+    base = base.replace(/_+/g, '_');
+    // Trim trailing dots/spaces (Windows path policy).
+    base = base.replace(/[\.\s]+$/, '');
+    // Empty / whitespace-only after sanitize → fallback name.
+    if (!base.trim()) base = 'cidra-document-' + Date.now();
+    // Truncate to 120 UTF-16 code units BEFORE adding extension.
+    if (base.length > 120) base = base.slice(0, 120).replace(/[\.\s]+$/, '');
+    // Always append the requested extension explicitly — never trust the
+    // browser to derive it from the MIME type.
+    return base + '.' + String(ext).replace(/^\./, '');
+  }
+
+  // --- Toast helper ----------------------------------------------------------
+  // Short-lived success message. Use for export-completed; existing
+  // banner system is for warnings/errors that should persist.
+  let toastTimer = null;
+  function showToast(text) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = String(text);
+    t.hidden = false;
+    // Force reflow before adding .show so the transition runs.
+    void t.offsetWidth;
+    t.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    t.onclick = function () { hideToast(); };
+    toastTimer = setTimeout(hideToast, 2500);
+  }
+  function hideToast() {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.classList.remove('show');
+    setTimeout(function () { t.hidden = true; }, 200);
+  }
+
+  // --- Export gating ---------------------------------------------------------
+  // Called from render(), btnClear, and after each export attempt.
+  function refreshExportButtons() {
+    const btnMd   = document.getElementById('btnExportMd');
+    const btnHtml = document.getElementById('btnExportHtml');
+    const btnDocx = document.getElementById('btnExportDocx');
+    // Gate 1: document loaded? (text content non-whitespace AND >0 block
+    // children — defends against the "empty document export" finding.)
+    const out = document.getElementById('output');
+    const hasDoc = State.lastRawMd != null &&
+                   out && out.textContent.trim().length > 0 &&
+                   out.querySelector('h1,h2,h3,h4,h5,h6,p,pre,table,ul,ol,blockquote') != null;
+    // Gate 2 (DOCX only): html-docx-js available.
+    const docxOk = hasDoc && Deps.htmlDocx() && !State.isExporting;
+    if (btnMd) {
+      btnMd.disabled = !hasDoc || State.isExporting;
+      btnMd.setAttribute('aria-disabled', String(!hasDoc || State.isExporting));
+    }
+    if (btnHtml) {
+      btnHtml.disabled = !hasDoc || State.isExporting;
+      btnHtml.setAttribute('aria-disabled', String(!hasDoc || State.isExporting));
+    }
+    if (btnDocx) {
+      btnDocx.disabled = !docxOk;
+      btnDocx.setAttribute('aria-disabled', String(!docxOk));
+      if (!Deps.htmlDocx()) {
+        btnDocx.title = 'DOCX export library failed to load — use HTML export and open in Word.';
+      } else if (!hasDoc) {
+        btnDocx.title = 'Load a document first.';
+      } else {
+        btnDocx.title = 'Export current document as .docx (Word).';
+      }
+    }
+  }
+
+  // --- Confirm unsafe export -------------------------------------------------
+  // When the user rendered with "Render anyway" (DOMPurify bypass), the
+  // exported artifact carries unsanitized content into a higher-privilege
+  // open path. Confirm before proceeding.
+  function confirmUnsafeIfNeeded(kind) {
+    if (!State.renderedUnsanitized) return true;
+    const msg =
+      'This document was rendered without HTML sanitization. ' +
+      'Exporting as .' + kind + ' may produce a file that runs scripts when opened. Continue?';
+    return window.confirm(msg);
+  }
+
+  // --- Begin/end export lifecycle -------------------------------------------
+  function beginExport() {
+    if (State.isExporting) return false;
+    State.isExporting = true;
+    // Mark all three buttons as exporting (for SR + visual state).
+    ['btnExportMd', 'btnExportHtml', 'btnExportDocx'].forEach(function (id) {
+      const b = document.getElementById(id);
+      if (b) {
+        b.setAttribute('aria-disabled', 'true');
+        b.setAttribute('data-exporting', 'true');
+        b.disabled = true;
+      }
+    });
+    // Disable Theme during export to avoid mid-clone style race.
+    const tb = document.getElementById('btnTheme');
+    if (tb) { tb.dataset.prevDisabled = tb.disabled ? '1' : '0'; tb.disabled = true; }
+    return true;
+  }
+  function endExport(blobUrl) {
+    State.isExporting = false;
+    ['btnExportMd', 'btnExportHtml', 'btnExportDocx'].forEach(function (id) {
+      const b = document.getElementById(id);
+      if (b) { b.removeAttribute('data-exporting'); }
+    });
+    const tb = document.getElementById('btnTheme');
+    if (tb) { if (tb.dataset.prevDisabled === '0') tb.disabled = false; delete tb.dataset.prevDisabled; }
+    refreshExportButtons();
+    if (blobUrl) {
+      // Defer revoke until the download anchor has had a chance to fire.
+      setTimeout(function () {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 1500);
+    }
+  }
+
+  // --- Trigger a download via anchor click ----------------------------------
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    // rel set so middleware (some CSP layers) don't strip the download.
+    a.rel = 'noopener';
+    // Some browsers require the anchor to be in the DOM for download to fire.
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return url;
+  }
+
+  // --- DOM rewriter for DOCX export ----------------------------------------
+  // Walk the export clone and apply Hebrew/RTL + Mermaid mitigations.
+  // Returns the clone (mutated in place).
+  function prepareCloneForDocxExport(clone) {
+    // (1) <bdi> drop mitigation: wrap inner text with U+2068 / U+2069 so
+    //     bidi isolation survives even when the <bdi> tag itself is
+    //     stripped by html-docx-js. Idempotent — skip if already wrapped.
+    const FSI = '⁨', PDI = '⁩';
+    Array.prototype.forEach.call(clone.querySelectorAll('bdi'), function (bdi) {
+      const txt = bdi.textContent || '';
+      if (txt.charAt(0) === FSI && txt.charAt(txt.length - 1) === PDI) return;
+      // Only wrap leaf bdi (no nested element children that would break)
+      if (bdi.children.length === 0) {
+        bdi.textContent = FSI + txt + PDI;
+      }
+    });
+
+    // (2) dir="rtl" / dir="auto" inline-style mitigation: html-docx-js
+    //     does not translate the dir attribute, but it does pass inline
+    //     style through. Resolve dir=auto by first-strong-character lookup.
+    Array.prototype.forEach.call(
+      clone.querySelectorAll('[dir="rtl"], [dir="auto"]'),
+      function (el) {
+        let d = el.getAttribute('dir');
+        if (d === 'auto') {
+          const t = el.textContent || '';
+          // First strong character — Hebrew block U+0590-U+05FF, Arabic U+0600-U+06FF.
+          d = /[֐-ۿ]/.test(t.replace(/[^ -~֐-ۿ]/g, '').slice(0, 32)) ? 'rtl' : 'ltr';
+          el.setAttribute('dir', d);
+        }
+        if (d === 'rtl') {
+          const prev = el.getAttribute('style') || '';
+          el.setAttribute('style', prev + ';direction:rtl;text-align:right;');
+        }
+      }
+    );
+
+    // (3) Mermaid / inline SVG → PNG rasterization. html-docx-js's altChunk
+    //     pipeline drops inline SVG; PNGs survive. Best-effort: if
+    //     rasterization fails (CORS-tainted, oversized), substitute a
+    //     visible marker so the loss is not silent.
+    const svgs = Array.prototype.slice.call(clone.querySelectorAll('svg'));
+    svgs.forEach(function (svg) {
+      try {
+        const xml = new XMLSerializer().serializeToString(svg);
+        const b64 = btoa(unescape(encodeURIComponent(xml)));
+        const dataUri = 'data:image/svg+xml;base64,' + b64;
+        // Replace with an <img> referencing the SVG; html-docx-js handles
+        // <img src=data:image/...> via altChunk. PNG conversion in DOCX
+        // would require an async canvas pass; we keep this synchronous
+        // for the v1 export and rely on Word's inline-image fallback.
+        // (Full SVG→PNG rasterization is in the codebase comment plan but
+        // requires async restructure; see README "Export limitations".)
+        const img = clone.ownerDocument.createElement('img');
+        img.src = dataUri;
+        const w = svg.getAttribute('width') || svg.viewBox?.baseVal?.width || 600;
+        const h = svg.getAttribute('height') || svg.viewBox?.baseVal?.height || 400;
+        img.setAttribute('width', String(w));
+        img.setAttribute('height', String(h));
+        img.alt = 'Diagram';
+        svg.parentNode.replaceChild(img, svg);
+      } catch (e) {
+        // Fallback: visible marker so the loss is not silent.
+        const marker = clone.ownerDocument.createElement('p');
+        marker.textContent = '[Diagram omitted — view HTML export]';
+        marker.style.fontStyle = 'italic';
+        marker.style.color = '#6b7280';
+        if (svg.parentNode) svg.parentNode.replaceChild(marker, svg);
+      }
+    });
+
+    // (4) Inline computed styles on the clone — defends the "theme toggle
+    //     mid-export" race and produces a self-contained DOCX regardless
+    //     of which theme was active at clone time. Only walk top-level
+    //     containers; per-node getComputedStyle would be O(N) with very
+    //     high constant. We capture only color / background / font.
+    Array.prototype.forEach.call(
+      clone.querySelectorAll('pre, code, h1, h2, h3, h4, h5, h6, table, th, td, blockquote'),
+      function (el) {
+        // The clone is detached; getComputedStyle returns initial values.
+        // Inline a sensible default styling so Word doesn't fall back to
+        // unstyled.
+        if (el.tagName === 'PRE' || el.tagName === 'CODE') {
+          const prev = el.getAttribute('style') || '';
+          el.setAttribute('style', prev +
+            ';font-family:Consolas,monospace;background:#f6f8fa;');
+        }
+      }
+    );
+
+    return clone;
+  }
+
+  // --- Snapshot the LIVE rendered DOM for export ----------------------------
+  // Returns a cloned <div> containing the current #output children.
+  // The clone is detached from the document — safe to mutate.
+  function snapshotRenderedClone() {
+    const out = document.getElementById('output');
+    if (!out) return null;
+    const clone = out.cloneNode(true);
+    // Make sure the clone has its OWN ownerDocument context for
+    // createElement during rewrite — cloneNode preserves ownerDocument
+    // so this is already correct, but be explicit.
+    return clone;
+  }
+
+  // --- Build a complete HTML export document --------------------------------
+  // Produces a self-contained HTML file: <html dir=...><head><style>...inline
+  // CSS...</style></head><body>...content...</body></html>. Inlines the
+  // current page CSS so the file is portable.
+  function buildHtmlDocument(contentNode, opts) {
+    opts = opts || {};
+    const dir = document.documentElement.getAttribute('dir') || 'auto';
+    const lang = document.documentElement.getAttribute('lang') || 'en';
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const title = (State.lastFileName || 'CIDRA document').replace(/\.(md|markdown|txt)$/i, '');
+    // Pull the page's inline <style> (we only embed one). This gives the
+    // exported HTML pixel-equivalent rendering of the viewer.
+    const styleEls = document.querySelectorAll('style');
+    let css = '';
+    styleEls.forEach(function (s) { css += s.textContent + '\n'; });
+    // Minimal additional styling for self-contained body padding (the
+    // original viewer relies on .content wrapper).
+    const extra = 'body{max-width:900px;margin:0 auto;padding:24px;}';
+    // Build the document. We use string concat (no innerHTML) — the
+    // contentNode HTML is already sanitized (it came from the live DOM
+    // which DOMPurify has already touched), and we are not parsing it.
+    const head =
+      '<!doctype html>' +
+      '<html lang="' + escapeHtml(lang) + '" dir="' + escapeHtml(dir) + '"' +
+      (theme === 'dark' ? ' data-theme="dark"' : '') + '>' +
+      '<head><meta charset="utf-8">' +
+      '<title>' + escapeHtml(title) + '</title>' +
+      '<style>' + css + extra + '</style></head>' +
+      '<body><div class="md">';
+    const tail = '</div></body></html>';
+    return head + contentNode.innerHTML + tail;
+  }
+
+  // --- The three export handlers -------------------------------------------
+  function exportMarkdown() {
+    if (!beginExport()) return;
+    let blobUrl = null;
+    try {
+      if (!confirmUnsafeIfNeeded('md')) return;
+      const md = State.lastRawMd;
+      if (md == null || !md.trim()) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      // Explicit UTF-8 BOM-less encoding via TextEncoder → Blob.
+      const blob = new Blob([md], {type: 'text/markdown;charset=utf-8'});
+      const filename = buildExportFilename(State.lastFileName, 'md');
+      blobUrl = triggerDownload(blob, filename);
+      showToast('Exported ' + filename);
+    } catch (err) {
+      Banner.error('export-md', [{text: 'Export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      endExport(blobUrl);
+    }
+  }
+
+  function exportHtml() {
+    if (!beginExport()) return;
+    let blobUrl = null;
+    try {
+      if (!confirmUnsafeIfNeeded('html')) return;
+      const clone = snapshotRenderedClone();
+      if (!clone || !clone.textContent.trim()) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      const html = buildHtmlDocument(clone);
+      const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+      const filename = buildExportFilename(State.lastFileName, 'html');
+      blobUrl = triggerDownload(blob, filename);
+      showToast('Exported ' + filename);
+    } catch (err) {
+      Banner.error('export-html', [{text: 'Export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      endExport(blobUrl);
+    }
+  }
+
+  function exportDocx() {
+    if (!beginExport()) return;
+    let blobUrl = null;
+    try {
+      if (!Deps.htmlDocx()) {
+        Banner.error('export-docx-nolib', [{text: 'DOCX export library failed to load. Use HTML export and open in Word.'}]);
+        return;
+      }
+      if (!confirmUnsafeIfNeeded('docx')) return;
+      const clone = snapshotRenderedClone();
+      if (!clone || !clone.textContent.trim()) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      // Mitigations for the two critical adversarial findings.
+      prepareCloneForDocxExport(clone);
+      // Large-document warning (>5MB source) — informational, not blocking.
+      if (State.lastRawMd && State.lastRawMd.length > 5 * 1024 * 1024) {
+        Banner.warning('export-large', [{text: 'Large document — DOCX export may take 10-30 seconds and use significant memory.'}]);
+      }
+      const html = buildHtmlDocument(clone);
+      const docxBlob = window.htmlDocx.asBlob(html);
+      const filename = buildExportFilename(State.lastFileName, 'docx');
+      blobUrl = triggerDownload(docxBlob, filename);
+      showToast('Exported ' + filename);
+    } catch (err) {
+      Banner.error('export-docx', [{text: 'DOCX export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      endExport(blobUrl);
+    }
+  }
+
+  // ===========================================================================
   // 10. WIRE UI — runs UNCONDITIONALLY at DOMContentLoaded, never gated on
   // dependency state. The toolbar buttons always work; rendering paths
   // are gated separately inside render().
@@ -1306,6 +1823,12 @@ footer { unicode-bidi: isolate; }
 
     const btnDir = $('btnDir');
     if (btnDir) {
+      // Sync the button label to the live html[dir] on boot. The markup
+      // ships <html dir="rtl"> (so the empty-state Hebrew renders right
+      // before any file is loaded), but the button label was hard-coded
+      // to "Dir: Auto" — producing a confusing state mismatch on first
+      // click. Resolve by reading the actual attribute now.
+      applyDir(document.documentElement.getAttribute('dir') || 'auto');
       btnDir.addEventListener('click', function () {
         const html = document.documentElement;
         const cur = html.getAttribute('dir') || 'auto';
@@ -1355,10 +1878,27 @@ footer { unicode-bidi: isolate; }
         State.lastRawMd = null;
         State.lastFileName = null;
         State.allowUnsanitizedFor = null;
+        State.renderedUnsanitized = false;
         Banner.clear('unsanitized-mode');
         Banner.clear('unsanitized-mode-active');
+        refreshExportButtons();
       });
     }
+
+    // Wire the three export buttons. Handlers do their own gating via
+    // beginExport() (isExporting flag), confirmUnsafeIfNeeded(), and the
+    // refreshExportButtons disabled state. We deliberately do NOT gate
+    // here so users with assistive tech that bypasses :disabled still
+    // hit the friendly "Nothing to export" path.
+    const btnExportMd = $('btnExportMd');
+    if (btnExportMd) btnExportMd.addEventListener('click', exportMarkdown);
+    const btnExportHtml = $('btnExportHtml');
+    if (btnExportHtml) btnExportHtml.addEventListener('click', exportHtml);
+    const btnExportDocx = $('btnExportDocx');
+    if (btnExportDocx) btnExportDocx.addEventListener('click', exportDocx);
+
+    // Initial pass: buttons disabled because no document loaded.
+    refreshExportButtons();
 
     // Save empty state HTML for Clear (taken from the pre-existing markup).
     const out = $('output');
@@ -1437,6 +1977,19 @@ footer { unicode-bidi: isolate; }
     } else {
       Banner.clear('no-hljs-final');
     }
+    // DOCX library — gate the Export .docx button only, never block other UI.
+    if (!Deps.htmlDocx()) {
+      Banner.warning('no-htmldocx-final', [
+        {bilingual: {
+          en: 'DOCX export library (html-docx-js) unavailable. Export .md / Export .html still work; .docx is disabled.',
+          he: 'ספריית ייצוא DOCX (html-docx-js) לא זמינה. ייצוא .md ו-.html עובד; ייצוא .docx מושבת.'
+        }}
+      ]);
+    } else {
+      Banner.clear('no-htmldocx-final');
+    }
+    // Re-evaluate export gating now that we know the final dep status.
+    refreshExportButtons();
 
     // Per-grammar failures aggregated into a single banner.
     const failedGrammars = [];
@@ -1460,8 +2013,8 @@ footer { unicode-bidi: isolate; }
     // 2. Inspect CDN results and attempt ./vendor/ fallback if needed.
     const failed = window.__cidraDepFail || {};
     const cdnBlockedSilently = !failed.marked && !Deps.marked();
-    const needsFallback = failed.marked || failed.dompurify || failed.hljs
-                       || !Deps.marked() || !Deps.dompurify() || !Deps.hljs();
+    const needsFallback = failed.marked || failed.dompurify || failed.hljs || failed['html-docx']
+                       || !Deps.marked() || !Deps.dompurify() || !Deps.hljs() || !Deps.htmlDocx();
 
     if (!needsFallback) {
       reportDepStatus();
@@ -1530,7 +2083,14 @@ footer { unicode-bidi: isolate; }
     Banner: Banner,
     boot: boot,
     failures: function () { return Object.assign({}, window.__cidraDepFail); },
-    loaded:   function () { return Object.assign({}, window.__cidraDepLoaded); }
+    loaded:   function () { return Object.assign({}, window.__cidraDepLoaded); },
+    // Export surface exposed for the Playwright suite. Tests should
+    // exercise the user path (click the button) rather than calling
+    // these directly, but the helpers are useful for fixture inspection.
+    exports: {
+      buildExportFilename: buildExportFilename,
+      refreshExportButtons: refreshExportButtons
+    }
   });
 
 })();

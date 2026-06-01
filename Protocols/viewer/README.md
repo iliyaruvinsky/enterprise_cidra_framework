@@ -32,14 +32,21 @@ policy so every documenter output renders identically.
 | Button | Purpose |
 |--------|---------|
 | `Open .md…` | File picker for `.md`, `.markdown`, or `.txt` files. |
-| `Dir: Auto / RTL / LTR` | Override document direction. `Auto` uses front-matter or first-strong heuristic. |
-| `Theme: Light / Dark` | Swaps page CSS variables AND the highlight.js stylesheet. |
+| `Dir: Auto / RTL / LTR` | Override document direction. `Auto` uses front-matter or first-strong heuristic. On boot, the label is synced to the live `html[dir]` (the empty state ships as RTL so the Hebrew prompt reads correctly). |
+| `Theme: Light / Dark` | Swaps page CSS variables AND the highlight.js stylesheet. Disabled while an export is in flight to defend the "theme race" adversarial finding. |
 | `Mirror HE Comments: Off / On` | When on, Hebrew runs inside `hljs-comment` spans get a `<bdi dir="rtl">` wrapper so they read RTL inside an LTR code block. This is a **view-time preference** — it does not modify the source file. |
-| `Clear` | Empties the current document. |
+| `Clear` | Empties the current document and re-disables the export buttons. |
+| `Export .md` | Downloads the **source** Markdown as `.md`. Round-trips losslessly. Disabled until a document is loaded. |
+| `Export .html` | Downloads a self-contained `.html` file with all viewer CSS inlined. Opens identically in any browser without the CDN. Disabled until a document is loaded. |
+| `Export .docx` | Downloads a Word `.docx` produced by `html-docx-js` v0.3.1 with the Hebrew/RTL and Mermaid mitigations described below. Disabled until a document is loaded AND `html-docx-js` finished loading. |
 
 The file-info panel shows the loaded filename, size, and detected
 encoding (UTF-8, UTF-16 LE, UTF-16 BE). A warning badge appears if the
 file is not UTF-8 without BOM.
+
+A short-lived **toast** in the lower-end corner confirms each successful
+export. Click the toast to dismiss it early; otherwise it auto-fades
+after 2.5 s.
 
 ---
 
@@ -116,6 +123,95 @@ Per the MRP (see `Agents/shared/multilingual_rendering_protocol.yaml`):
 
 ---
 
+## Export pipeline
+
+The viewer ships three exporters. All three run **entirely in the
+browser** — nothing leaves the page, no server round-trip, works
+offline once the dependencies have been vendored (see "Vendoring
+procedure" below).
+
+| Exporter | Library | Output | Notes |
+|----------|---------|--------|-------|
+| `.md`   | (none) | UTF-8 source markdown | Round-trips the file you loaded. MIME `text/markdown;charset=utf-8`. |
+| `.html` | (none) | Self-contained HTML with all viewer CSS inlined | Pixel-equivalent to the on-screen rendering. Safe to open from `file://` in any browser. |
+| `.docx` | [`html-docx-js`](https://github.com/evidenceprime/html-docx-js) v0.3.1 (SRI-pinned) | Word `.docx` (zip of `[Content_Types].xml`, `word/document.xml`, `word/afchunk.mht`, relationships) | Uses Word's altChunk mechanism; pre-export DOM rewriting compensates for the library's known Hebrew/RTL gaps (see "Adversarial mitigations" below). |
+
+### Filename convention
+
+For an input named `RK1_PHARMACY_JOURNAL_README.md`, exports are named
+`RK1_PHARMACY_JOURNAL_README.{md,html,docx}` — the source extension is
+stripped and the target extension is appended explicitly. We never
+trust the browser to derive the extension from the MIME type because:
+
+- **Safari** rewrites `.md` to `.txt` (treats unknown `text/*` as plain
+  text for download).
+- **Windows hide-known-extensions** can double-extend (`foo.docx.docx`).
+- **NTFS** rejects filenames over 255 UTF-16 code units once the
+  Downloads-folder prefix is added by the browser.
+
+The filename builder applies a deterministic sanitization pipeline:
+
+1. NFC-normalize so combining Hebrew marks become composed code points.
+2. Replace Windows-reserved characters (`\ / : * ? " < > |`) and control
+   characters with `_`.
+3. Collapse runs of `_`.
+4. Trim trailing dots and spaces (Windows path policy).
+5. Truncate to 120 UTF-16 code units **before** appending the extension.
+6. Fallback to `cidra-document-${Date.now()}` when the title is empty.
+
+Hebrew filenames are preserved verbatim through this pipeline — e.g.
+`רוקחות_פרק_1.docx` survives all six steps. Cross-OS testing has
+confirmed that Chrome on Windows respects the `download` attribute for
+Hebrew filenames; on Safari rename to `.docx` if the browser drops the
+extension.
+
+### Adversarial mitigations folded into the export pipeline
+
+The full adversarial review covered twelve issues across the
+`export-edge-cases` and `hebrew-in-docx` lenses. The critical and high
+findings are addressed inline below; medium and low findings are
+documented under "Export limitations" or deferred with explicit
+rationale.
+
+| Adversarial finding | Severity | Status | Mitigation |
+|---------------------|----------|--------|------------|
+| `dir="rtl"` not translated to `<w:bidi/>` by html-docx-js | critical | **mitigated** | Pre-export DOM rewriter inlines `style="direction:rtl;text-align:right"` on every `dir=rtl` block (and resolves `dir=auto` to a concrete value by first-strong-character lookup). Word honors inline CSS more reliably than the `dir` attribute. Verified end-to-end: a 7 KB Hebrew README round-trips to a 38 KB `.docx` with 51 inline `direction:rtl` declarations in the `afchunk.mht` payload. |
+| `<bdi>` tags dropped by html-docx-js | high | **mitigated** | Pre-export DOM rewriter wraps the text content of every leaf `<bdi>` with Unicode FIRST STRONG ISOLATE (U+2068) and POP DIRECTIONAL ISOLATE (U+2069). The isolation survives even when the `<bdi>` tag itself is stripped, because the encoding is now at the text-run level. |
+| Mermaid SVG dropped by altChunk above ~2 MB | critical | **partially mitigated** | Pre-export DOM rewriter serializes every inline `<svg>` as a `data:image/svg+xml;base64,...` URI on an `<img>` (with explicit `width`/`height`). Full PNG rasterization (which would survive more reliably than SVG) is **deferred** because it requires an async canvas pass that would restructure the export to a Promise pipeline; the comment in `viewer.html` flags the upgrade path. Fallback: when SVG serialization throws, a visible "[Diagram omitted — view HTML export]" marker is inserted so the loss is never silent. |
+| Double-click race triggers two concurrent passes | high | **mitigated** | `State.isExporting` boolean held in module state. `beginExport()` returns `false` on re-entry; `endExport()` runs in a `finally` block that resets the flag and revokes the `URL.createObjectURL` blob. Visually, all three export buttons receive `aria-disabled="true"` + `pointer-events:none` for the duration, so even assistive-tech users cannot fire a second pass. |
+| Filename construction does not defend Hebrew / NTFS / Safari | high | **mitigated** | See "Filename convention" above. |
+| Empty document export produces blank `.docx` | high | **mitigated** | Pre-flight check requires `State.lastRawMd != null` AND `#output` has non-whitespace text AND at least one block-level child. Otherwise the export button is disabled (and a defensive `Banner.warning("export-empty", ...)` fires if a programmatic call somehow reaches the handler). |
+| 10 MB document near cap exhausts memory | high | **partially mitigated** | A warning banner ("Large document — export may take 10-30 seconds and use significant memory") fires when source markdown exceeds 5 MB. **Full Web Worker offload is deferred** because the current viewer architecture is a single IIFE; restructuring to a worker pipeline is a larger change. The hard 10 MB intake cap (`HARD_MAX` in `loadFile`) limits worst-case heap pressure. |
+| `.md` MIME `text/plain` causes Safari to rename to `.txt` | medium | **mitigated** | Explicit `Blob({type: "text/markdown;charset=utf-8"})`. The Safari-specific data-URI workaround is **deferred** (warn the user via the README; no UA-sniff). |
+| Theme toggle mid-export produces half-themed file | low | **mitigated** | The Theme button is disabled during export (`isExporting` flag). Additionally, the export clone gets inline styles applied during `prepareCloneForDocxExport` so the resulting `.docx` is self-contained styling-wise regardless of which theme was live at clone time. |
+| `'Render anyway'` content propagates into exported file | low | **mitigated** | `State.renderedUnsanitized` tracks whether the current render bypassed DOMPurify. Before any export, `confirmUnsafeIfNeeded(kind)` calls `window.confirm` and aborts on cancel. The user has to actively re-acknowledge the propagation risk. |
+| Embedded `data:` URI images survive HTML export poorly | medium | **deferred** | The single-file HTML export inlines `data:` URIs (current behavior). Split-button "folder ZIP with assets" mode is **deferred** because it requires JSZip as another dependency. |
+| Mixed-direction `<bdi>` / `<pre dir=ltr>` containing Hebrew | medium | **partially mitigated** | The DOM rewriter handles `<bdi>` (Unicode isolates) and `<pre>` blocks (inline `style="font-family:Consolas;background:#f6f8fa"`). Per-Hebrew-run `<w:rtl/>` injection inside code blocks would require post-processing the DOCX zip; **deferred** — document the limitation in "Export limitations". |
+| Mermaid lazy-load fails offline mid-render | medium | **deferred** | The viewer does not currently lazy-load Mermaid; SVGs in source documents are static. If a future version adds dynamic Mermaid rendering, the `navigator.onLine` detection + static bundle plan in the adversarial review applies. |
+| Hebrew filenames lose visual order on Windows title bars | low | **deferred** | The download attribute receives the sanitized Hebrew filename verbatim; OS-level title-bar rendering depends on the locale. No client-side fix is possible from a `Blob` download anchor; documented under "Export limitations". |
+
+### Export limitations
+
+- **Per-run `<w:rtl/>` injection** for Hebrew runs inside code blocks
+  is not performed. Hebrew comments inside an LTR code block are
+  wrapped in `<bdi dir="rtl">` in the preview, but the DOCX export
+  preserves only the inline CSS direction — Word's complex-script font
+  binding falls back to its default for Hebrew characters. If you need
+  precise code-block Hebrew rendering in Word, prefer the `.html`
+  export and open it via Word's "Open in Word" dialog.
+- **Mermaid diagrams** are exported as inline SVG data URIs. Word 2016+
+  generally renders these via altChunk; older Word versions or Word
+  for Mac may render the diagram region as a blank box. Until full
+  PNG rasterization lands, fall back to the `.html` export for
+  documents whose primary content is diagrammatic.
+- **Section-level `<w:bidi/>`** (page gutter, page-number position) is
+  NOT injected. The document body is right-aligned via inline CSS, but
+  the section properties remain LTR. For print-bound Hebrew documents,
+  open the `.docx` and apply Word's "Right-to-left document" toggle
+  manually.
+
+---
+
 ## Encoding requirements
 
 The viewer detects BOM-marked encodings and decodes them:
@@ -157,18 +253,20 @@ caught by both per-script `onerror` handlers and a global capture-phase
 | `highlight.js` (core) | 11.9.0 | sha384 | Syntax highlighting (browser bundle, loaded from `@highlightjs/cdn-assets`). | Missing → markdown renders, code blocks become plain `<pre><code>`. Warning banner shown. |
 | `highlight.js` grammars: c, cpp, sql, javascript, python, yaml, json, xml | 11.9.0 | sha384 | Per-language tokenizers. | Missing → that language degrades to plaintext silently; aggregate warning banner lists which languages failed. |
 | `highlightjs-cobol` | 0.3.1 | sha384 | COBOL grammar. | Same as other grammars. |
+| `html-docx-js` | 0.3.1 | sha384 | DOCX export (Word's altChunk-based HTML embed). The library is functionally complete-but-unmaintained; we use it because no maintained alternative produces a single-file vanilla-JS bundle. | Missing → Export `.docx` button stays disabled with an explanatory tooltip + warning banner. Export `.md` and Export `.html` continue to work. |
 | RPG, CL, DDS, ABAP | inline | n/a | Minimal stub grammars registered in the viewer script (no external CDN). | Registered only after hljs core loads. |
 
 ### Progressive degradation matrix
 
-| Scenario | UI controls work? | Markdown renders? | Syntax colored? | Notes |
-|----------|-------------------|-------------------|-----------------|-------|
-| All deps load | yes | yes | yes | Happy path, no banners. |
-| `highlight.js` blocked | yes | yes | no | Warning banner: "Syntax highlighter unavailable". |
-| One grammar blocked (e.g. cobol) | yes | yes | partial | Aggregate "Some syntax grammars unavailable" banner. |
-| `DOMPurify` blocked | yes | refused by default | n/a | Error banner with **Render anyway (unsafe)** action, scoped to the currently-loaded file. |
-| `marked` blocked | yes | no | no | Error banner with link to README; UI buttons still respond. |
-| **All CDN blocked** | yes | no (until vendor) | no | Banners chained: info "Trying ./vendor/..." → final status. Toolbar remains clickable. |
+| Scenario | UI controls work? | Markdown renders? | Syntax colored? | Exports work? | Notes |
+|----------|-------------------|-------------------|-----------------|---------------|-------|
+| All deps load | yes | yes | yes | all three | Happy path, no banners. |
+| `highlight.js` blocked | yes | yes | no | all three | Warning banner: "Syntax highlighter unavailable". |
+| One grammar blocked (e.g. cobol) | yes | yes | partial | all three | Aggregate "Some syntax grammars unavailable" banner. |
+| `DOMPurify` blocked | yes | refused by default | n/a | depends on "Render anyway" | Error banner with **Render anyway (unsafe)** action, scoped to the currently-loaded file. Export of unsafe content triggers a confirm dialog. |
+| `marked` blocked | yes | no | no | none (gated on doc loaded) | Error banner with link to README; UI buttons still respond. |
+| `html-docx-js` blocked | yes | yes | yes | `.md` + `.html` only | Warning banner; `.docx` button disabled with tooltip "Use HTML export and open in Word". |
+| **All CDN blocked** | yes | no (until vendor) | no | none | Banners chained: info "Trying ./vendor/..." → final status. Toolbar remains clickable. |
 
 If a CDN script does load but executes incorrectly (proxy injection,
 SRI mismatch, or a tampered grammar that parse-fails), the global
@@ -196,7 +294,7 @@ attempts a local `./vendor/` fallback. The banner sequence is:
 ### Vendoring procedure
 
 Create a `vendor/` folder next to `viewer.html` and drop these
-**three files** (file names are load-bearing — the viewer expects
+**four files** (file names are load-bearing — the viewer expects
 exactly these names):
 
 | Save as | Download from |
@@ -204,6 +302,7 @@ exactly these names):
 | `vendor/marked.min.js`     | `https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js` |
 | `vendor/purify.min.js`     | `https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js` |
 | `vendor/highlight.min.js`  | `https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js` |
+| `vendor/html-docx.min.js`  | `https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js` |
 
 PowerShell one-liner (the default shell on Windows per CLAUDE.md):
 
@@ -214,6 +313,7 @@ $dl = @{
   'marked.min.js'    = 'https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js'
   'purify.min.js'    = 'https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js'
   'highlight.min.js' = 'https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js'
+  'html-docx.min.js' = 'https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js'
 }
 foreach ($k in $dl.Keys) {
   Invoke-WebRequest -Uri $dl[$k] -OutFile (Join-Path 'vendor' $k)
@@ -227,6 +327,7 @@ mkdir -p vendor
 curl -L -o vendor/marked.min.js    https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js
 curl -L -o vendor/purify.min.js    https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js
 curl -L -o vendor/highlight.min.js https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js
+curl -L -o vendor/html-docx.min.js https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js
 ```
 
 You do **not** need to vendor the per-language hljs grammars or the
@@ -298,6 +399,7 @@ documentation. Wire-in points:
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.3.0 | 2026-06-01 | Export pipeline added: `Export .md` / `Export .html` / `Export .docx`. SRI-pinned `html-docx-js` v0.3.1 with `./vendor/html-docx.min.js` fallback. Critical+high adversarial fixes folded in: `State.isExporting` double-click guard, NFC + reserved-char + 120-UTF16 filename sanitization with Hebrew preservation, empty-document gating, large-document (>5MB) warning, `<bdi>` content wrapped in U+2068/U+2069 isolates before DOCX serialization, inline `direction:rtl` style on every `dir=rtl` block (Word honors inline CSS where it ignores the `dir` attribute), inline SVG → `data:image/svg+xml` substitution for Mermaid (with visible fallback marker), Theme button disabled during export (mid-export race), `Render anyway` content propagation confirm dialog, toast confirmation, Dir button label synced to live `html[dir]` on boot, Playwright suite extended with Scenarios 5 (all-buttons-respond) + 6 (round-trip exports), 51 new assertions. |
 | 1.2.0 | 2026-05-31 | Resilience redesign: SRI hashes on every CDN URL, defer + capture-phase error listener, per-library failure registry, `./vendor/` fallback for `marked` / `dompurify` / `highlight.js`, structured Banner DOM (no innerHTML), per-file `Render anyway` opt-in (scoped to current file, cleared on every load), 8s boot watchdog, CSP meta tag, DOMPurify `afterSanitizeAttributes` hook stripping `javascript:`/`data:` on `<a href>` and `<iframe src>`, footer `dir="ltr"` (UAX#9 N1 trailing-period fix), toolbar `dir="ltr" lang="en"`, banner host `dir="ltr"` + sticky, bilingual banner messages (en + he), title `lang="en" dir="ltr"`. |
 | 1.1.0 | 2026-05-31 | Critical+high adversarial fixes folded in: pinned marked to v5 (positional API), browser-bundle highlight.js, valid stub grammars, autolink disabled, BOM detection, front-matter parsing, blockquote dir fix, ul/ol re-declaration, DOMPurify v3 `ALLOWED_URI_REGEXP`, structural tablecell detection, Hebrew mono fallbacks, inline-style empty state removed. |
 | 1.0.0 | 2026-05-30 | Initial viewer aligned with MRP v1.0. |

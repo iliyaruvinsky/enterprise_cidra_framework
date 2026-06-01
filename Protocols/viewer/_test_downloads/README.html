@@ -1,0 +1,731 @@
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>README</title><style>
+/* ---------------------------------------------------------------------------
+   1. THEME VARIABLES
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --code-bg: #f6f8fa;
+  --pre-bg: #f6f8fa;
+  --link: #2563eb;
+  --toolbar-bg: #f3f4f6;
+  --badge-bg: #eef2ff;
+  --badge-fg: #4338ca;
+  --warn-bg: #fef3c7;
+  --warn-fg: #92400e;
+
+  /* Mono stack — Hebrew fallbacks BEFORE generic monospace so Hebrew
+     comments inside code blocks render with matching x-height. */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", "DejaVu Sans Mono",
+          "Miriam Mono CLM", "Hack Hebrew", "Noto Sans Mono Hebrew",
+          monospace;
+
+  /* Body stack — Hebrew fallbacks early when lang=he so bilingual
+     paragraphs have consistent line height. */
+  --sans: "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew",
+          "Arial Hebrew", "Helvetica Neue", Arial, sans-serif;
+}
+html[data-theme="dark"] {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --code-bg: #161b22;
+  --pre-bg: #161b22;
+  --link: #58a6ff;
+  --toolbar-bg: #161b22;
+  --badge-bg: #1f2937;
+  --badge-fg: #93c5fd;
+  --warn-bg: #422006;
+  --warn-fg: #fbbf24;
+}
+
+/* ---------------------------------------------------------------------------
+   2. PAGE BASELINE
+   --------------------------------------------------------------------------- */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+}
+body {
+  unicode-bidi: plaintext;
+  font-feature-settings: 'liga' 0;
+}
+
+/* ---------------------------------------------------------------------------
+   3. unicode-bidi:plaintext RE-DECLARATION on every block
+   (unicode-bidi does NOT inherit; protocol MRP_002)
+   --------------------------------------------------------------------------- */
+.md p, .md li, .md ul, .md ol, .md blockquote, .md dd,
+.md figcaption, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6,
+.md details, .md summary, .md td, .md th {
+  unicode-bidi: plaintext;
+}
+
+/* ---------------------------------------------------------------------------
+   4. TOOLBAR
+   --------------------------------------------------------------------------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  direction: ltr;   /* toolbar chrome is LTR — controls are predictable */
+  text-align: left;
+}
+.toolbar .title {
+  font-weight: 600;
+  margin-inline-end: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar .badge {
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+.toolbar button, .toolbar label.file-picker {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--sans);
+}
+.toolbar button:hover, .toolbar label.file-picker:hover {
+  border-color: var(--accent);
+}
+/* Disabled buttons (e.g., Export when no doc is loaded, or DOCX when
+   html-docx-js failed to load). pointer-events:none blocks click on the
+   button itself but the parent .export-group still receives :hover, so
+   the tooltip explaining WHY it's disabled still appears. */
+.toolbar button:disabled,
+.toolbar button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* The aria-disabled variant is used during export so SR users hear
+   "disabled" while sighted users see the spinner state. */
+.toolbar button[aria-disabled="true"][data-exporting="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+.toolbar .export-group {
+  display: inline-flex;
+  gap: 4px;
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 8px;
+  margin-inline-start: 4px;
+}
+.toolbar input[type=file] { display: none; }
+.toolbar .file-info {
+  font-size: 12px;
+  color: var(--muted);
+}
+.toolbar .warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   5. CONTENT WRAPPER
+   --------------------------------------------------------------------------- */
+.content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 20px;
+}
+.empty .empty-line {
+  margin: 0.5em 0;
+}
+.empty .empty-line[lang="he"] {
+  direction: rtl;
+}
+.empty .empty-line[lang="en"] {
+  direction: ltr;
+}
+.empty .drop-hint {
+  margin-top: 1.5em;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------------
+   6. HEADINGS / LINKS / PARAGRAPHS — logical alignment
+   --------------------------------------------------------------------------- */
+.md {
+  unicode-bidi: plaintext;
+}
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+  text-align: start;
+}
+.md h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.md h3 { font-size: 1.25em; }
+.md h4 { font-size: 1.1em; }
+.md p, .md li {
+  text-align: start;
+  margin: 0.6em 0;
+}
+.md a { color: var(--link); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   7. CODE — pre/code/inline isolation
+   direction:ltr is NOT marked !important so that hljs-comment <span>
+   children with embedded <bdi dir="rtl"> wrappers can override per-comment
+   (protocol MRP_001 + hebrew_comment_handling)
+   --------------------------------------------------------------------------- */
+.md pre, .md code, .md kbd, .md samp, .md var {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.md code {
+  background: var(--code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  white-space: nowrap;
+  text-align: left;
+}
+.md pre {
+  background: var(--pre-bg);
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 1em 0;
+  text-align: left;
+  line-height: 1.45;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  white-space: pre;
+  display: block;
+}
+
+/* Inline code is wrapped in <bdi><code> by the renderer.
+   Selector targets BOTH <bdi> and <code> so the rule still binds when
+   the bdi wrapper is present. */
+.md p :is(bdi, code), .md li :is(bdi, code),
+.md td :is(bdi, code), .md th :is(bdi, code),
+.md dd :is(bdi, code),
+.md h1 :is(bdi, code), .md h2 :is(bdi, code), .md h3 :is(bdi, code),
+.md h4 :is(bdi, code), .md h5 :is(bdi, code), .md h6 :is(bdi, code),
+.md blockquote :is(bdi, code) {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Hebrew comments inside code blocks: renderer post-processes
+   .hljs-comment spans whose textContent contains Hebrew, wrapping them
+   in <bdi dir="rtl"> so the Hebrew reads RTL within the LTR pre. */
+.md pre bdi[dir="rtl"] {
+  unicode-bidi: isolate;
+  direction: rtl;
+  font-family: var(--mono);
+}
+
+/* ---------------------------------------------------------------------------
+   8. TABLES
+   Direction follows html[dir]; nested tables inherit from their cell.
+   --------------------------------------------------------------------------- */
+.md table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  direction: inherit;
+}
+html[dir="rtl"] .md table { direction: rtl; }
+html[dir="ltr"] .md table { direction: ltr; }
+
+.md table .md table, .md table table {
+  direction: inherit;
+  unicode-bidi: plaintext;
+}
+
+.md th, .md td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: start;
+  vertical-align: top;
+}
+.md thead th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+
+/* Code-only cells — LTR regardless of table direction.
+   Two layers of defense:
+     (a) renderer.tablecell tags structural code-only cells with class
+     (b) :has() fallback for browsers that support it (Chrome 105+,
+         Safari 15.4+, Firefox 121+) */
+.md td.code-only, .md th.code-only {
+  direction: ltr;
+  text-align: left;
+}
+@supports (selector(:has(*))) {
+  .md td:has(> bdi:only-child > code:only-child),
+  .md th:has(> bdi:only-child > code:only-child) {
+    direction: ltr;
+    text-align: left;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   9. LISTS / BLOCKQUOTES / DETAILS — logical padding
+   --------------------------------------------------------------------------- */
+.md ul, .md ol {
+  padding-inline-start: 2em;
+  margin: 0.8em 0;
+}
+.md blockquote {
+  border-inline-start: 4px solid var(--border);
+  padding-inline-start: 1em;
+  margin: 1em 0;
+  color: var(--muted);
+}
+.md details {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5em 0.8em;
+  margin: 1em 0;
+}
+.md summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* Hebrew-letter ordered lists */
+.md ol[lang="he"] {
+  list-style-type: hebrew;
+}
+
+/* ---------------------------------------------------------------------------
+   10. DROP HIGHLIGHT
+   --------------------------------------------------------------------------- */
+body.drag-over {
+  outline: 3px dashed var(--accent);
+  outline-offset: -10px;
+}
+
+/* ---------------------------------------------------------------------------
+   11. BANNER SYSTEM — non-blocking status messages above the viewer.
+   The host (#banners) is dir="ltr" lang="en" in markup because all
+   current banner copy is English; mixed-language banners are isolated
+   per-banner via <bdi> in the structured Banner DOM builder (no
+   innerHTML — see Banner.add in the boot script).
+   Sticky so error banners stay visible during scroll.
+   --------------------------------------------------------------------------- */
+#banners {
+  position: sticky;
+  top: 48px;            /* below the sticky toolbar */
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 24px;
+  max-width: 900px;
+  margin-inline: auto;
+  unicode-bidi: isolate;
+}
+#banners:empty { display: none; }
+.banner {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+.banner .banner-msg { flex: 1; }
+.banner .banner-msg bdi { unicode-bidi: isolate; }
+.banner .banner-action {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--sans);
+}
+.banner .banner-action:hover { border-color: var(--accent); }
+.banner .banner-close {
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  padding: 0 4px;
+  margin-inline-start: auto;
+}
+.banner .banner-close:hover { opacity: 1; }
+.banner.info    { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.banner.warning { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+.banner.error   { background: #fef2f2; border-color: #fca5a5; color: #7f1d1d; }
+html[data-theme="dark"] .banner.info    { background: #1e293b; border-color: #1e40af; color: #bfdbfe; }
+html[data-theme="dark"] .banner.warning { background: #292524; border-color: #92400e; color: #fcd34d; }
+html[data-theme="dark"] .banner.error   { background: #1c1917; border-color: #991b1b; color: #fca5a5; }
+
+/* ---------------------------------------------------------------------------
+   12. TOAST — short-lived success notification (export complete).
+   Positioned in the lower-end corner so it never overlaps the sticky
+   toolbar or banners. role=status (assistive tech announces it without
+   stealing focus) and dir=ltr because current toast copy is English.
+   Auto-fades after 2.5s; click to dismiss earlier.
+   --------------------------------------------------------------------------- */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  inset-inline-end: 24px;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+  unicode-bidi: isolate;
+}
+#toast.show {
+  opacity: 0.95;
+  transform: translateY(0);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   13. BIDI SAFETY for chrome (footer, toolbar). Banners use `isolate`
+   above with explicit dir="ltr" on the host so flex-row order is
+   deterministic for English copy. The footer uses dir="ltr" in markup
+   — `unicode-bidi: isolate` here respects that explicit direction
+   without re-deriving from content (NOT `plaintext`, which would flip
+   if Hebrew content is ever added).
+   --------------------------------------------------------------------------- */
+footer { unicode-bidi: isolate; }
+
+/* ---------------------------------------------------------------------------
+   PERMANENT ANTI-PATTERN GUARD
+   DO NOT add a global * { direction: ltr !important } "fix" — it
+   destroys Hebrew rendering globally. See protocol css_pattern_library
+   .permanent_anti_pattern_guard.
+   --------------------------------------------------------------------------- */
+
+body{max-width:900px;margin:0 auto;padding:24px;}</style></head><body><div class="md"><h1 dir="auto" id="rk1_pharmacy_journal-תיעוד-תוכנית-פקודות-יומן-רוקחות">RK1_PHARMACY_JOURNAL — תיעוד תוכנית פקודות יומן רוקחות</h1>
+<blockquote><p dir="auto">מסמך תיעוד בעברית · שמות קבצים, שמות סקציות, קטעי קוד וערכים מספריים נשמרים באנגלית/לטינית כפי שהם מופיעים במקור. כל טענה על מבנה הקוד נשענת על ספירות מדויקות שבוצעו מול קבצי המקור. כל טענה על כוונה עסקית נוקטת לשון זהירה ומופנית למקור ספציפי (קוד, מקטע, מפרט).</p>
+</blockquote>
+<hr>
+<h2 dir="auto" id="סקירה-כללית">סקירה כללית</h2>
+<p dir="auto">לפי מבנה הקוד ולפי המפרט העברי של הממשק, נראה שמדובר בתוכנית COBOL/400 שנוצרה על־ידי מחולל CA 2E ופועלת על IBM i (AS/400). התוכנית, על פי המפרט, מייצרת פקודות יומן פיננסיות למערכת SAP מתוך נתוני פעילות רוקחות של מכבי. מבחינה לוגית מדובר בתוכנית CA 2E אחת, אך פיזית היא מסופקת כשני קבצים נפרדים: קובץ Header וקובץ Lines.</p>
+<hr>
+<h2 dir="auto" id="מבנה-הקבצים">מבנה הקבצים</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>שם הקובץ</th>
+<th>מטרה</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="01_PROGRAM_SPECIFICATION.md">01_PROGRAM_SPECIFICATION.md</a></bdi></td>
+<td>מפרט תוכנית, הצהרות FD, ספירות מבנה</td>
+</tr>
+<tr>
+<td>02</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="02_EXTERNAL_INTERFACE.md">02_EXTERNAL_INTERFACE.md</a></bdi></td>
+<td>פרמטרי כניסה, ממשק חיצוני (backend אצווה — ללא DSPF/PRTF)</td>
+</tr>
+<tr>
+<td>03</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="03_TECHNICAL_ANALYSIS.md">03_TECHNICAL_ANALYSIS.md</a></bdi></td>
+<td>פירוט טכני של סקציות, תלויות, ודפוסי שמות CA 2E</td>
+</tr>
+<tr>
+<td>04</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="04_BUSINESS_LOGIC.md">04_BUSINESS_LOGIC.md</a></bdi></td>
+<td>תזרים התוכנית, נגזר מהקוד והמפרט</td>
+</tr>
+<tr>
+<td>05</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="05_CODE_ARTIFACTS.md">05_CODE_ARTIFACTS.md</a></bdi></td>
+<td>קטעי קוד מרכזיים עם מספרי שורות מדויקים</td>
+</tr>
+<tr>
+<td>06</td>
+<td>README.md (קובץ זה)</td>
+<td>סקירה וניווט</td>
+</tr>
+<tr>
+<td>07</td>
+<td><bdi><a rel="noopener noreferrer" target="_blank" href="דוח_אימות_RK1_PHARMACY_JOURNAL.md">דוח_אימות_RK1_PHARMACY_JOURNAL.md</a></bdi></td>
+<td>דוח אימות 100 נקודות</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 dir="auto" id="סטטיסטיקות-ספירות-מדויקות-מאומתות">סטטיסטיקות (ספירות מדויקות מאומתות)</h2>
+<table>
+<thead>
+<tr>
+<th>מדד</th>
+<th>Header (<bdi><code>rk0041c776</code></bdi>)</th>
+<th>Lines (<bdi><code>rk042c786</code></bdi>)</th>
+<th>סה"כ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>גודל קובץ מקור (בתים)</td>
+<td>2,409,034</td>
+<td>1,485,769</td>
+<td>3,894,803</td>
+</tr>
+<tr>
+<td>סה"כ שורות</td>
+<td>30,377</td>
+<td>18,587</td>
+<td><strong>48,964</strong></td>
+</tr>
+<tr>
+<td>שורות קוד (ללא הערות וריקות)</td>
+<td>30,319</td>
+<td>18,566</td>
+<td><strong>48,885</strong></td>
+</tr>
+<tr>
+<td>שורות הערה (<bdi><code>*</code></bdi> במצביע)</td>
+<td>57</td>
+<td>20</td>
+<td>77</td>
+</tr>
+<tr>
+<td>שורות ריקות</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+</tr>
+<tr>
+<td>הצהרות FD (קבצי דיסק)</td>
+<td>29</td>
+<td>12</td>
+<td>41</td>
+</tr>
+<tr>
+<td>פריטי רמה־01 ב־DATA DIVISION</td>
+<td>765</td>
+<td>694</td>
+<td><strong>1,459</strong></td>
+</tr>
+<tr>
+<td>הוראות COPY</td>
+<td>59</td>
+<td>25</td>
+<td>84</td>
+</tr>
+<tr>
+<td>SECTIONs ב־PROCEDURE DIVISION</td>
+<td>76</td>
+<td>45</td>
+<td>121</td>
+</tr>
+<tr>
+<td>פסקאות (paragraphs)</td>
+<td>240</td>
+<td>138</td>
+<td>378</td>
+</tr>
+<tr>
+<td>הוראות PERFORM</td>
+<td>665</td>
+<td>186</td>
+<td>851</td>
+</tr>
+<tr>
+<td>הוראות CALL (מופעים)</td>
+<td>109</td>
+<td>89</td>
+<td>198</td>
+</tr>
+<tr>
+<td>תוכניות חיצוניות ייחודיות נקראות</td>
+<td>—</td>
+<td>—</td>
+<td>18</td>
+</tr>
+<tr>
+<td>מקטעים (chunks) שיוצרו על־ידי CIDRA chunker</td>
+<td>—</td>
+<td>—</td>
+<td><strong>172</strong></td>
+</tr>
+</tbody></table>
+<p dir="auto">הספירות הופקו באמצעות <bdi><code>(Get-Content [FILE]).Count</code></bdi> עבור מספרי שורות, וטביעת regex מבנית מעל עותקי העבודה (<bdi><code>*.cob</code></bdi>). יומן אימות מלא מופיע ב־<bdi><a rel="noopener noreferrer" target="_blank" href="דוח_אימות_RK1_PHARMACY_JOURNAL.md">דוח_אימות_RK1_PHARMACY_JOURNAL.md</a></bdi>.</p>
+<hr>
+<h2 dir="auto" id="הצלבות-משותף-מול-ייחודי">הצלבות (משותף מול ייחודי)</h2>
+<p dir="auto">לפי ניתוח ההוראות <bdi><code>COPY</code></bdi> של ה־chunker (84 הוראות COPY בסך הכל, 18 קבצים פיזיים ייחודיים כיעד), הקבצים הבאים נראים מופיעים בשני קבצי המקור (Header וגם Lines) ומסומנים כמשותפים לרכיב:</p>
+<h3 dir="auto" id="קבצים-פיזיים-משותפים-בשימוש-שני-הקבצים">קבצים פיזיים משותפים בשימוש שני הקבצים</h3>
+<ul dir="auto">
+<li dir="auto"><bdi><code>RK0081A9L1</code></bdi> <em>(shared from Header to Lines — מופיע ב־FD של שני הקבצים)</em></li>
+<li dir="auto"><bdi><code>RK0082BAL1</code></bdi> <em>(shared from Header to Lines)</em></li>
+<li dir="auto"><bdi><code>RK0248BZL1</code></bdi> <em>(shared from Header to Lines)</em></li>
+<li dir="auto"><bdi><code>RK0635AVL0</code></bdi> <em>(shared from Header to Lines)</em></li>
+<li dir="auto"><bdi><code>RK9784ACL1</code></bdi> <em>(shared from Header to Lines)</em></li>
+<li dir="auto"><bdi><code>Y2IOPEN</code></bdi> <em>(boilerplate של מחולל CA 2E — copy member משותף לפתיחת קבצים)</em></li>
+<li dir="auto"><bdi><code>Y2PGDSPK</code></bdi> <em>(boilerplate של מחולל CA 2E — מבנה נתוני תוכנית)</em></li>
+</ul>
+<h3 dir="auto" id="קבצים-ייחודיים-ל-header-24-קבצים">קבצים ייחודיים ל־Header (24 קבצים)</h3>
+<p dir="auto">RK0041EQL0, RK0041EQLC, RK0041EQLE, RK0041EQMA, RK0248BZL3, RK0274BSL0, RK0274BSL2, RK0282ACL0, RK0282ACL3, RK0400HBL7, RK0401HCL9, RK1300BAL1, RK2010AEL7, RK2244BTL0, RK2244BTL9, RK3502BVL1, RK4181EQL0, RK4181EQL1, RK9735A9L0, RK9780BIL0, RK9780BIL1, RK9783BXL2, RK9784ACL0, RK9784ACL2 — כל אלה unique to Header.</p>
+<h3 dir="auto" id="קבצים-ייחודיים-ל-lines-7-קבצים">קבצים ייחודיים ל־Lines (7 קבצים)</h3>
+<p dir="auto">RK0042ERL1, RK0045CAL1, RK0248BZL2, RK0300EJL1, RK0699AWL2, RK2010AEL1, RK2084JLL2 — כל אלה unique to Lines.</p>
+<hr>
+<h2 dir="auto" id="תוכניות-חיצוניות-הנקראות">תוכניות חיצוניות הנקראות</h2>
+<p dir="auto">לפי הוראות <bdi><code>CALL</code></bdi> בקוד, 18 תוכניות חיצוניות ייחודיות נראות נקראות מתוך התוכנית הזו. לפי פרוטוקול agent_handoff_protocol של CIDRA ועל פי DOC_INT_007 (זיהוי מגבלות), פנימיותן של תוכניות חיצוניות אלו אינה מנותחת בהיקף זה ומתועדת כמגבלה:</p>
+<table>
+<thead>
+<tr>
+<th>תוכנית</th>
+<th>תפקיד משוער (לפי דפוס שמות בלבד)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td class="code-only"><bdi><code>HN0050C040</code></bdi></td>
+<td>קידומת לא־RK; נראה שמדובר בפונקציית שירות תאגידית</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>NOIEUPR</code></bdi></td>
+<td>דפוס השם תואם כלי שירות לטיפול בשגיאות</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>RK0041L202</code></bdi></td>
+<td>משפחת RK0041 — נראה קשור לתחום של תוכנית זו</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>RK0042C769</code></bdi></td>
+<td>משפחת RK0042</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>RK0042C786</code></bdi></td>
+<td>המזהה תואם את שם קובץ Lines — נראה כי מדובר בהפניה־עצמית או תוכנית באותה משפחה</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>RK0045C770</code></bdi></td>
+<td>משפחת RK0045</td>
+</tr>
+<tr>
+<td><bdi><code>RK2014L334</code></bdi>, <bdi><code>RK2014L335</code></bdi></td>
+<td>משפחת RK2014</td>
+</tr>
+<tr>
+<td class="code-only"><bdi><code>RK3500C010</code></bdi></td>
+<td>משפחת RK3500 — נראה ש קשור לקובץ הפרמטרים <bdi><code>RK3502BVL1</code></bdi></td>
+</tr>
+<tr>
+<td><bdi><code>RK4000C990</code></bdi>, <bdi><code>RK4000R001</code></bdi></td>
+<td>משפחת RK4000</td>
+</tr>
+<tr>
+<td><bdi><code>RK9780C020</code></bdi>, <bdi><code>RK9783C010</code></bdi>, <bdi><code>RK9784C020</code></bdi></td>
+<td>משפחת RK9780/3/4 — דפוס השמות תואם להערות העבריות לגבי 9780/9784 לתהליכי צבירה</td>
+</tr>
+<tr>
+<td><bdi><code>Y2QLVNR</code></bdi>, <bdi><code>Y2RTDAC</code></bdi>, <bdi><code>Y2RTJCR</code></bdi>, <bdi><code>Y2SNMGC</code></bdi></td>
+<td>קידומת Y2 — תוכניות שירות של זמן הריצה של CA 2E</td>
+</tr>
+</tbody></table>
+<p dir="auto"><strong>מגבלה:</strong> התפקידים נגזרים אך ורק מדפוסי שמות. על פי DOC_INT_011 (אין הנחות כעובדות), ההתנהגות בפועל של תוכניות אלו אינה ניתנת לקביעה ללא קוד המקור שלהן.</p>
+<hr>
+<h2 dir="auto" id="איך-לנווט-בתיעוד">איך לנווט בתיעוד</h2>
+<ol dir="auto">
+<li dir="auto"><strong>התחל כאן (README)</strong> לסקירה כללית של הרכיב וניווט בין הקבצים</li>
+<li dir="auto">עבור אל <strong>01_PROGRAM_SPECIFICATION</strong> למטה־דאטה ברמת התוכנית ולסיכום מבני מלא</li>
+<li dir="auto">עבור אל <strong>03_TECHNICAL_ANALYSIS</strong> לפירוט סקציה־אחר־סקציה</li>
+<li dir="auto">עבור אל <strong>04_BUSINESS_LOGIC</strong> לתזרים מוסק (עם לשון זהירה)</li>
+<li dir="auto">השתמש ב־<strong>05_CODE_ARTIFACTS</strong> כשצריך לראות קוד COBOL בפועל עם מספרי שורות</li>
+<li dir="auto">אמת איכות ב־<strong>דוח_אימות_RK1_PHARMACY_JOURNAL.md</strong></li>
+</ol>
+<hr>
+<h2 dir="auto" id="מגבלות-תיעוד">מגבלות תיעוד</h2>
+<h3 dir="auto" id="מה-שלא-ניתן-לקבוע-מהקוד">מה שלא ניתן לקבוע מהקוד</h3>
+<ul dir="auto">
+<li dir="auto"><strong>תוכן קבצי DDS (Data Description Specifications)</strong> — הוראות <bdi><code>COPY DDS-ALL-FORMATS OF [FILE]</code></bdi> מפנות לקבצי DDS חיצוניים (למשל הגדרות <bdi><code>RK3502BVL1</code></bdi>) שאינם בהיקף. סוגי שדות, אורכים ומשמעויות אינם ניתנים לאימות.</li>
+<li dir="auto"><strong>התנהגות תוכניות חיצוניות</strong> — 18 התוכניות הנקראות (<bdi><code>RK*</code></bdi>, <bdi><code>Y2*</code></bdi>, <bdi><code>HN*</code></bdi>, <bdi><code>NOIEUPR</code></bdi>) ללא קוד מקור בהיקף.</li>
+<li dir="auto"><strong>תוכן טבלאות בסיס הנתונים</strong> — ערכי נתונים בפועל, מספרי רשומות ומצב זמן ריצה אינם ניתנים לידיעה מהקוד.</li>
+<li dir="auto"><strong>רינדור עברית</strong> — הערות מכילות טקסט עברי מימין לשמאל; התיעוד שומר על המחרוזות מילולית אך אינו מאמת את הכוונה החזותית המקורית בעורך AS/400.</li>
+<li dir="auto"><strong>מצב מודל CA 2E</strong> — מודל המחולל (הגדרות פונקציות / נתיבי גישה) שיצר את הקוד אינו כלול; מקצת הבחירות המבניות נראות נובעות מהמודל אך לא ניתן לעקוב למודל עצמו.</li>
+</ul>
+<h3 dir="auto" id="מה-שכן-ידוע-מהקוד">מה שכן ידוע מהקוד</h3>
+<ul dir="auto">
+<li dir="auto">מספרי שורות מדויקים לכל קובץ (מאומת)</li>
+<li dir="auto">גבולות החטיבות (<bdi><code>IDENTIFICATION</code></bdi>, <bdi><code>ENVIRONMENT</code></bdi>, <bdi><code>DATA</code></bdi>, <bdi><code>PROCEDURE</code></bdi>) ושורות התחלתן</li>
+<li dir="auto">כל הצהרות <bdi><code>FD</code></bdi> (סה"כ 41, רשימה מלאה לעיל)</li>
+<li dir="auto">כל יעדי הוראות COPY (84 מופעים, 18 קבצים פיזיים ייחודיים)</li>
+<li dir="auto">כל שמות ה־SECTIONs ב־PROCEDURE DIVISION (סה"כ 121)</li>
+<li dir="auto">כל הוראות PERFORM ו־CALL והיעדים שלהן</li>
+<li dir="auto">טקסט עברי ואנגלי של הערות, כפי שהוא מופיע במקור</li>
+</ul>
+<hr>
+<h2 dir="auto" id="מתודולוגיה">מתודולוגיה</h2>
+<p dir="auto">התיעוד הופק על־ידי framework של CIDRA (צינור Chunker → Documenter). על פי פרוטוקול אנטי־הזיות של המסגרת:</p>
+<ul dir="auto">
+<li dir="auto">כל ספירה הופקה באמצעות הוראות PowerShell מדויקות וניתנת לאימות מול המקור</li>
+<li dir="auto">כל טענה הסקתית מנוסחת בלשון זהירה ("נראה ש", "לפי הקוד", "appears to", "according to code")</li>
+<li dir="auto">מילים שיווקיות ומילות הסמכת־יתר נמנעות לפי DOC_INT_006</li>
+<li dir="auto">הצלבות מסומנות במפורש (shared from / unique to)</li>
+<li dir="auto">קטע מגבלות מופיע בכל קובץ</li>
+</ul>
+<hr>
+<p dir="auto"><em>נוצר 2026-05-27 · Component: RK1_PHARMACY_JOURNAL · Technology: IBM AS/400 / CA 2E COBOL/400 · Framework: CIDRA v1.0.0</em></p>
+</div></body></html>
