@@ -464,7 +464,25 @@ function Invoke-NativeWithTimeout {
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
-    foreach ($a in $ArgumentList) { [void]$psi.ArgumentList.Add($a) }
+
+    # PowerShell 7+ (built on .NET 5+) has ProcessStartInfo.ArgumentList -- a
+    # Collection<string> that auto-quotes per-argument. Windows PowerShell 5.1
+    # (built on .NET Framework 4.x) does NOT have that property; accessing it
+    # silently returns $null. Detect and fall back to a manually-quoted single
+    # Arguments string.
+    if ($null -ne $psi.ArgumentList) {
+        foreach ($a in $ArgumentList) { [void]$psi.ArgumentList.Add($a) }
+    } else {
+        $quoted = $ArgumentList | ForEach-Object {
+            if ($_ -match '[\s"]') {
+                '"' + ($_ -replace '"', '\"') + '"'
+            } else {
+                $_
+            }
+        }
+        $psi.Arguments = ($quoted -join ' ')
+    }
+
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute        = $false
