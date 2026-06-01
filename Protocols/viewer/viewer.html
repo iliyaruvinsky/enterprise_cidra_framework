@@ -260,13 +260,246 @@ body {
   opacity: 0.7;
   cursor: progress;
 }
-.toolbar .export-group {
+/* ---------- Export menu (v1.6.0 — single trigger replaces 5 buttons) ---------- */
+
+/* Anchor for the absolutely-positioned popup. border-inline-start
+   recreates the visual divider the old .export-group provided. The
+   --divider-strong custom property gives dark theme a stronger edge
+   than the default --border, which fades into --toolbar-bg. */
+.export-menu-root {
+  position: relative;
   display: inline-flex;
-  gap: 4px;
-  border-inline-start: 1px solid var(--border);
+  align-items: center;
+  border-inline-start: 1px solid var(--divider-strong, var(--border));
   padding-inline-start: 8px;
-  margin-inline-start: 4px;
+  margin-inline-start: 2px;
 }
+
+/* Trigger button — inherits .toolbar button styling above; adds the
+   caret affordance and intrinsic flex layout for icon spacing. */
+.export-menu-root .trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-menu-root .trigger .caret {
+  display: inline-block;
+  font-size: 0.85em;
+  line-height: 1;
+  transition: transform 140ms ease-out;
+}
+/* Position-aware caret rotation. When the popup is below the trigger
+   (default) and open, rotate 180deg so the caret points UP toward the
+   menu's top edge (visual "open above me"). When the popup flips
+   above the trigger, no rotation — the caret continues to point DOWN
+   so it visually indicates "open below me from your perspective". */
+.export-menu-root .trigger[aria-expanded="true"][data-menu-position="below"] .caret,
+.export-menu-root .trigger[aria-expanded="true"]:not([data-menu-position]) .caret {
+  transform: rotate(180deg);
+}
+.export-menu-root .trigger[aria-expanded="true"][data-menu-position="above"] .caret {
+  transform: rotate(0deg);
+}
+
+/* Popup container. inset-inline-start: 0 aligns the menu's inline-start
+   edge to the anchor's inline-start edge — left in LTR, right in RTL —
+   automatically. placeMenu() flips to inset-inline-end on overflow. */
+.export-menu-root .menu {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 1000;
+  min-inline-size: 240px;
+  max-inline-size: min(320px, 96vw);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--divider-strong, var(--border));
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  font-family: var(--sans);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+  pointer-events: none;
+}
+.export-menu-root .menu[data-open="true"] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.export-menu-root .menu[hidden] {
+  display: none;
+}
+/* Position-aware shadow — when the menu opens ABOVE the trigger the
+   shadow flips upward so it doesn't look like a smudge inside the
+   toolbar below the menu. */
+.export-menu-root .menu[data-position="above"] {
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Group label — provides BOTH a visible section heading and the
+   accessible name for the wrapping role="group". Not aria-hidden:
+   per the adversarial review, NVDA + Firefox can announce groups via
+   aria-labelledby even when the source is not aria-hidden, and we
+   prefer the sighted-and-SR-user parity. */
+.export-menu-root .menu-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 12px 4px;
+  user-select: none;
+}
+
+/* Separator between Document / Tabular sections. */
+.export-menu-root .menu-divider {
+  block-size: 1px;
+  border: 0;
+  background: var(--border);
+  margin-block: 4px;
+  margin-inline: 8px;
+}
+
+/* Menu item — stacked layout (name above description). Stacking
+   eliminates the RTL flexbox column-reversal bug that a two-column
+   space-between layout would have produced when mixed Hebrew/English
+   content is present. */
+.export-menu-root .menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  inline-size: 100%;
+  min-block-size: 36px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+  /* pointer-events:none from .toolbar button[aria-disabled="true"]
+     would block click on disabled items — we WANT clicks so we can
+     intercept them in onItemClick and stop propagation. Re-enable. */
+  pointer-events: auto;
+}
+.export-menu-root .menu-item:hover:not([aria-disabled="true"]),
+.export-menu-root .menu-item:focus-visible:not([aria-disabled="true"]) {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.export-menu-root .menu-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Disabled items still need keyboard focusability for arrow-key
+   traversal (so the sr-only reason can be announced) — keep the
+   outline visible on focus even when disabled. */
+.export-menu-root .menu-item[aria-disabled="true"]:focus-visible {
+  outline: 2px dashed var(--muted);
+  outline-offset: 2px;
+}
+.export-menu-root .menu-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  text-align: start;
+}
+.export-menu-root .menu-item-desc {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: start;
+  white-space: nowrap;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mid-export state for the trigger — same pattern as the old buttons. */
+.export-menu-root .trigger[aria-disabled="true"][data-exporting="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* Screen-reader-only helper for disabled-reason text. */
+.export-menu-root .sr-only,
+.toolbar .sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduced motion — drop transitions and the translateY entry. */
+@media (prefers-reduced-motion: reduce) {
+  .export-menu-root .menu {
+    transition: opacity 1ms linear;
+    transform: none;
+  }
+  .export-menu-root .menu[data-open="true"] {
+    transform: none;
+  }
+  .export-menu-root .trigger .caret {
+    transition: transform 1ms linear;
+  }
+  /* No caret rotation under reduced motion — some users with
+     vestibular disorders are sensitive to rotation regardless of
+     transition speed. */
+  .export-menu-root .trigger[aria-expanded="true"] .caret {
+    transform: none !important;
+  }
+}
+
+/* Mobile — wider tap targets, slightly narrower min width. */
+@media (max-width: 600px) {
+  .export-menu-root .menu {
+    min-inline-size: 200px;
+    max-inline-size: 92vw;
+  }
+  .export-menu-root .menu-item {
+    min-block-size: 44px;
+    padding: 10px 12px;
+  }
+  .export-menu-root .menu-item-desc {
+    font-size: 11px;
+  }
+}
+
+/* Dark-theme overrides. --divider-strong gives the dropdown edge
+   enough contrast against --toolbar-bg in dark mode; default
+   var(--border) is too subtle. --hover-bg is a translucent overlay
+   that maintains a visible delta against --bg regardless of palette. */
+:root {
+  --divider-strong: var(--border);
+  --hover-bg: rgba(0, 0, 0, 0.06);
+}
+html[data-theme="dark"] {
+  --divider-strong: #484f58;
+  --hover-bg: rgba(255, 255, 255, 0.08);
+}
+html[data-theme="dark"] .export-menu-root .menu {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+html[data-theme="dark"] .export-menu-root .menu[data-position="above"] {
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+}
+/* Defensive focus-ring contrast in dark theme — a 1px box-shadow in
+   --bg color creates a separator ring so the focus outline never
+   touches the highlight bg directly. */
+html[data-theme="dark"] .export-menu-root .menu-item:focus-visible:not([aria-disabled="true"]) {
+  outline-color: #79c0ff;
+  box-shadow: 0 0 0 1px var(--bg);
+}
+
 .toolbar input[type=file] { display: none; }
 .toolbar .file-info {
   font-size: 12px;
@@ -757,22 +990,91 @@ footer { unicode-bidi: isolate; }
   <button id="btnClear" title="Clear current document">Clear</button>
 
   <!-- =====================================================================
-       Export buttons. Design order: Markdown (source-of-truth round-trip) →
-       HTML (self-contained, exact visual fidelity) → DOCX (Word). All three
-       are gated on `State.lastRawMd != null`; disabled state set by
-       refreshExportButtons() on every render/clear. The DOCX button gets a
-       second gate on Deps.htmlDocx() — if the CDN library failed to load,
-       the button stays disabled and a non-error banner explains why.
-       Each click sets State.isExporting=true to block the double-click race
-       (adversarial finding "high: double-click triggers two concurrent
-       passes"); finally-block resets it and visually re-enables.
+       Export dropdown (v1.6.0). Replaces the previous five buttons
+       (Export .md / .html / .docx / .csv / .xlsx) with a single trigger
+       that opens a roving-tabindex menu grouped into Document formats
+       and Tabular formats. Adversarial fixes folded in:
+         - role="menu" + role="menuitem" (WAI-ARIA Authoring Practices)
+         - disabled items remain reachable via arrow keys so the
+           sr-only reason text can be announced
+         - Tab moves focus to the trigger BEFORE hiding the menu so the
+           browser's native Tab handler picks up from a known position
+         - all-items-disabled focuses item 0 anyway (no keyboard trap)
+         - sr-only disabled-reason on the trigger itself
+         - resize/scroll repositions instead of closing
+         - mutation observer on html[dir]/data-theme repositions while
+           open (theme/dir mid-open does not destroy the popup)
+         - position-aware shadow + caret rotation (above vs below)
+         - inset-inline-* logical properties for automatic RTL flip
+       Per-format gating mirrors the previous refreshExportButtons()
+       logic exactly; tooltips and sr-only reasons match verbatim. The
+       existing exportMarkdown / exportHtml / exportDocx / exportCsv /
+       exportXlsx handler functions are UNCHANGED — the menu only
+       changes the event source. See ExportMenu in the boot script.
        ===================================================================== -->
-  <span class="export-group" role="group" aria-label="Export">
-    <button id="btnExportMd"   disabled aria-disabled="true" title="Export current document as .md">Export .md</button>
-    <button id="btnExportHtml" disabled aria-disabled="true" title="Export current document as self-contained .html">Export .html</button>
-    <button id="btnExportDocx" disabled aria-disabled="true" title="Export current document as .docx (Word)">Export .docx</button>
-    <button id="btnExportCsv"  disabled aria-disabled="true" title="Export document tables as .csv (or .zip if multiple tables)">Export .csv</button>
-    <button id="btnExportXlsx" disabled aria-disabled="true" title="Export document tables as .xlsx (Excel workbook)">Export .xlsx</button>
+  <span class="export-menu-root">
+    <button id="btnExportMenu"
+            class="trigger"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="exportMenu"
+            aria-describedby="btnExportMenuReason"
+            disabled
+            aria-disabled="true"
+            title="Load a document first.">
+      Export <span class="caret" aria-hidden="true">&#x25BE;</span>
+    </button>
+    <span id="btnExportMenuReason" class="sr-only">Load a document first.</span>
+    <div id="exportMenu"
+         class="menu"
+         role="menu"
+         aria-labelledby="btnExportMenu"
+         hidden>
+      <div id="grpExportDocs" class="menu-group-label">Document formats</div>
+      <div role="group" aria-labelledby="grpExportDocs">
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportMd" class="menu-item"
+                data-export="md">
+          <span class="menu-item-name">Export .md</span>
+          <span class="menu-item-desc">Markdown source</span>
+        </button>
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportHtml" class="menu-item"
+                data-export="html">
+          <span class="menu-item-name">Export .html</span>
+          <span class="menu-item-desc">Standalone HTML</span>
+        </button>
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportDocx" class="menu-item"
+                data-export="docx"
+                aria-describedby="miExportDocxReason">
+          <span class="menu-item-name">Export .docx</span>
+          <span class="menu-item-desc">Word document</span>
+        </button>
+        <span id="miExportDocxReason" class="sr-only" hidden></span>
+      </div>
+      <hr role="separator" class="menu-divider" aria-orientation="horizontal">
+      <div id="grpExportTab" class="menu-group-label">Tabular formats</div>
+      <div role="group" aria-labelledby="grpExportTab">
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportCsv" class="menu-item"
+                data-export="csv"
+                aria-describedby="miExportCsvReason">
+          <span class="menu-item-name">Export .csv</span>
+          <span class="menu-item-desc">Tables as CSV</span>
+        </button>
+        <span id="miExportCsvReason" class="sr-only" hidden></span>
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportXlsx" class="menu-item"
+                data-export="xlsx"
+                aria-describedby="miExportXlsxReason">
+          <span class="menu-item-name">Export .xlsx</span>
+          <span class="menu-item-desc">Excel workbook</span>
+        </button>
+        <span id="miExportXlsxReason" class="sr-only" hidden></span>
+      </div>
+    </div>
   </span>
 
   <span id="fileInfo" class="file-info"></span>
@@ -1726,62 +2028,532 @@ footer { unicode-bidi: isolate; }
     return n;
   }
 
-  function refreshExportButtons() {
-    const btnMd   = document.getElementById('btnExportMd');
-    const btnHtml = document.getElementById('btnExportHtml');
-    const btnDocx = document.getElementById('btnExportDocx');
-    const btnCsv  = document.getElementById('btnExportCsv');
-    const btnXlsx = document.getElementById('btnExportXlsx');
-    // Gate 1: document loaded? (text content non-whitespace AND >0 block
-    // children — defends against the "empty document export" finding.)
-    const out = document.getElementById('output');
-    const hasDoc = State.lastRawMd != null &&
-                   out && out.textContent.trim().length > 0 &&
-                   out.querySelector('h1,h2,h3,h4,h5,h6,p,pre,table,ul,ol,blockquote') != null;
-    // Gate 2 (table-based exports): at least one exportable <table>.
-    const tableCount = hasDoc ? countExportableTables(out) : 0;
-    const hasTables = hasDoc && tableCount > 0;
-    // Gate 3 (DOCX only): html-docx-js available.
-    const docxOk = hasDoc && Deps.htmlDocx() && !State.isExporting;
-    // Gate 4 (XLSX only): ExcelJS available.
-    const xlsxLibOk = Deps.exceljs();
-    const xlsxOk   = hasTables && xlsxLibOk && !State.isExporting;
-    // Gate 5 (CSV): N>=2 also requires JSZip — checked at click time.
-    const csvOk    = hasTables && !State.isExporting;
+  // ===========================================================================
+  // ExportMenu — single-trigger dropdown replacing the 5 export buttons.
+  // Encapsulates state, ARIA wiring, keyboard model, outside-click handling,
+  // and per-item gating that mirrors the previous refreshExportButtons()
+  // logic exactly. Adversarial fixes (a11y + RTL/theme + state-edge-cases)
+  // folded inline; see the design doc / commit message for the full list.
+  // ===========================================================================
+  const ExportMenu = (function () {
+    const state = {
+      isOpen: false,
+      focusedIndex: -1,
+      onDocPointerDown: null,
+      onDocClick: null,
+      onDocKeyDown: null,
+      onWinResize: null,
+      onWinScroll: null,
+      onHtmlMutation: null,
+      htmlObserver: null,
+      lastDocSignature: null,
+      reposRaf: 0,
+    };
 
-    function set(btn, enabled, tooltip) {
-      if (!btn) return;
-      btn.disabled = !enabled;
-      btn.setAttribute('aria-disabled', String(!enabled));
-      if (tooltip) btn.title = tooltip;
+    // Map menu-item data-export value → existing handler function.
+    // The exportMarkdown / exportHtml / exportDocx / exportCsv / exportXlsx
+    // functions are unchanged; the menu only changes the event source.
+    const handlerMap = {
+      md:   function () { return exportMarkdown(); },
+      html: function () { return exportHtml(); },
+      docx: function () { return exportDocx(); },
+      csv:  function () { return exportCsv(); },
+      xlsx: function () { return exportXlsx(); },
+    };
+
+    function $id(id) { return document.getElementById(id); }
+    function trigger() { return $id('btnExportMenu'); }
+    function menu()    { return $id('exportMenu'); }
+    function items() {
+      const m = menu();
+      return m ? Array.prototype.slice.call(m.querySelectorAll('[role="menuitem"]')) : [];
     }
-    set(btnMd, hasDoc && !State.isExporting,
-        hasDoc ? 'Export current document as .md' : 'Load a document first.');
-    set(btnHtml, hasDoc && !State.isExporting,
-        hasDoc ? 'Export current document as self-contained .html' : 'Load a document first.');
-    if (btnDocx) {
-      let docxTooltip;
-      if (!Deps.htmlDocx())  docxTooltip = 'DOCX export library failed to load — use HTML export and open in Word.';
-      else if (!hasDoc)      docxTooltip = 'Load a document first.';
-      else                   docxTooltip = 'Export current document as .docx (Word).';
-      set(btnDocx, docxOk, docxTooltip);
+
+    // --------------------- Open / Close / Toggle ---------------------
+
+    function open() {
+      if (state.isOpen) return;
+      const m = menu();
+      const t = trigger();
+      if (!m || !t || t.disabled) return;
+      // Refresh gating once more right before opening — defends the
+      // "late library load while menu hidden" race.
+      refresh();
+      m.hidden = false;
+      // Force a paint so the transition runs.
+      // eslint-disable-next-line no-unused-expressions
+      void m.offsetHeight;
+      m.dataset.open = 'true';
+      t.setAttribute('aria-expanded', 'true');
+      state.isOpen = true;
+      placeMenu();
+      // Always focus the first item — even if all are disabled, so SR
+      // users get the announcement of the first item's aria-describedby
+      // reason text. Adversarial fix #3 (a11y).
+      const all = items();
+      if (all.length) focusItem(0);
+      // Attach document-level listeners.
+      state.onDocPointerDown = onDocumentPointerDown;
+      state.onDocClick = onDocumentClick;
+      state.onDocKeyDown = onDocumentKeyDown;
+      state.onWinResize = scheduleReposition;
+      state.onWinScroll = onScrollMaybeReposition;
+      document.addEventListener('pointerdown', state.onDocPointerDown, true);
+      document.addEventListener('click', state.onDocClick, true);
+      document.addEventListener('keydown', state.onDocKeyDown);
+      window.addEventListener('resize', state.onWinResize);
+      window.addEventListener('scroll', state.onWinScroll, true);
+      // Observe theme/dir changes on <html> and reposition.
+      try {
+        state.htmlObserver = new MutationObserver(scheduleReposition);
+        state.htmlObserver.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['dir', 'data-theme'],
+        });
+      } catch (_) { /* old browsers without MutationObserver */ }
+      // Snapshot the current document signature so we close on doc change.
+      state.lastDocSignature = docSignature();
     }
-    if (btnCsv) {
-      let csvTooltip;
-      if (!hasDoc)               csvTooltip = 'Load a document first.';
-      else if (!hasTables)       csvTooltip = 'No tables to export from this document.';
-      else if (tableCount === 1) csvTooltip = 'Export document table as .csv';
-      else                       csvTooltip = 'Export ' + tableCount + ' document tables as .zip of .csv files';
-      set(btnCsv, csvOk, csvTooltip);
+
+    function close(opts) {
+      if (!state.isOpen) return;
+      const restoreFocus = !opts || opts.restoreFocus !== false;
+      const m = menu();
+      const t = trigger();
+      if (m) {
+        m.dataset.open = 'false';
+        m.hidden = true;
+        // Clear inline positioning overrides from placeMenu().
+        m.style.insetInlineStart = '';
+        m.style.insetInlineEnd = '';
+        m.style.insetBlockStart = '';
+        m.style.insetBlockEnd = '';
+        m.style.left = '';
+        m.style.right = '';
+        m.style.maxInlineSize = '';
+        delete m.dataset.position;
+      }
+      if (t) {
+        t.setAttribute('aria-expanded', 'false');
+        delete t.dataset.menuPosition;
+      }
+      state.isOpen = false;
+      state.focusedIndex = -1;
+      if (state.onDocPointerDown) {
+        document.removeEventListener('pointerdown', state.onDocPointerDown, true);
+        state.onDocPointerDown = null;
+      }
+      if (state.onDocClick) {
+        document.removeEventListener('click', state.onDocClick, true);
+        state.onDocClick = null;
+      }
+      if (state.onDocKeyDown) {
+        document.removeEventListener('keydown', state.onDocKeyDown);
+        state.onDocKeyDown = null;
+      }
+      if (state.onWinResize) {
+        window.removeEventListener('resize', state.onWinResize);
+        state.onWinResize = null;
+      }
+      if (state.onWinScroll) {
+        window.removeEventListener('scroll', state.onWinScroll, true);
+        state.onWinScroll = null;
+      }
+      if (state.htmlObserver) {
+        try { state.htmlObserver.disconnect(); } catch (_) {}
+        state.htmlObserver = null;
+      }
+      if (state.reposRaf) {
+        try { cancelAnimationFrame(state.reposRaf); } catch (_) {}
+        state.reposRaf = 0;
+      }
+      if (restoreFocus && t) t.focus();
     }
-    if (btnXlsx) {
-      let xlsxTooltip;
-      if (!xlsxLibOk)        xlsxTooltip = 'XLSX export library failed to load — use CSV export instead.';
-      else if (!hasDoc)      xlsxTooltip = 'Load a document first.';
-      else if (!hasTables)   xlsxTooltip = 'No tables to export from this document.';
-      else                   xlsxTooltip = 'Export ' + tableCount + ' table' + (tableCount === 1 ? '' : 's') + ' as .xlsx (Excel workbook)';
-      set(btnXlsx, xlsxOk, xlsxTooltip);
+
+    function toggle() {
+      if (state.isOpen) close();
+      else open();
     }
+
+    // --------------------- Viewport-edge positioning ---------------------
+
+    function scheduleReposition() {
+      if (!state.isOpen) return;
+      if (state.reposRaf) return;
+      state.reposRaf = requestAnimationFrame(function () {
+        state.reposRaf = 0;
+        const m = menu();
+        if (m) {
+          m.style.insetInlineStart = '';
+          m.style.insetInlineEnd = '';
+          m.style.insetBlockStart = '';
+          m.style.insetBlockEnd = '';
+          m.style.left = '';
+          m.style.right = '';
+          m.style.maxInlineSize = '';
+        }
+        placeMenu();
+      });
+    }
+
+    function onScrollMaybeReposition(e) {
+      // Scrolling INSIDE the menu — ignore.
+      const m = menu();
+      if (m && e.target instanceof Node && m.contains(e.target)) return;
+      scheduleReposition();
+    }
+
+    function placeMenu() {
+      const m = menu();
+      const t = trigger();
+      if (!m || !t) return;
+      // Use computed style on the trigger — authoritative effective
+      // direction regardless of dir="auto" cascade weirdness.
+      // (Detection retained for parity but not branched — logical
+      // properties + physical overflow checks do the right thing.)
+      const r = m.getBoundingClientRect();
+      const overflowsLeft = r.left < 8;
+      // Account for the entry translateY(-4px) so we don't miss bottom-
+      // edge overflow by exactly the transform offset.
+      const projectedBottom = r.bottom + 4;
+      const overflowsRight = r.right > window.innerWidth - 8;
+      if (overflowsRight && !overflowsLeft) {
+        m.style.insetInlineStart = 'auto';
+        m.style.insetInlineEnd = '0';
+      } else if (overflowsLeft && !overflowsRight) {
+        m.style.insetInlineStart = '0';
+        m.style.insetInlineEnd = 'auto';
+      } else if (overflowsLeft && overflowsRight) {
+        m.style.insetInlineStart = '0';
+        m.style.insetInlineEnd = 'auto';
+        m.style.left = '4px';
+        m.style.right = '4px';
+        m.style.maxInlineSize = 'calc(100vw - 8px)';
+      }
+      // Vertical flip + position-aware shadow/caret.
+      if (projectedBottom > window.innerHeight - 8) {
+        m.style.insetBlockStart = 'auto';
+        m.style.insetBlockEnd = 'calc(100% + 4px)';
+        m.dataset.position = 'above';
+        t.dataset.menuPosition = 'above';
+      } else {
+        m.dataset.position = 'below';
+        t.dataset.menuPosition = 'below';
+      }
+    }
+
+    // --------------------- Focus / roving tabindex ---------------------
+
+    function focusItem(idx) {
+      const all = items();
+      if (idx < 0 || idx >= all.length) return;
+      all.forEach(function (it, i) {
+        it.setAttribute('tabindex', i === idx ? '0' : '-1');
+      });
+      all[idx].focus();
+      state.focusedIndex = idx;
+    }
+
+    // Arrow keys traverse ALL items (including disabled), so the
+    // sr-only reason text can be announced. Adversarial fix #2 (a11y).
+    function moveFocus(direction) {
+      const all = items();
+      if (!all.length) return;
+      let idx = state.focusedIndex;
+      idx = (idx + direction + all.length) % all.length;
+      focusItem(idx);
+    }
+
+    function moveToEdge(which) {
+      const all = items();
+      if (!all.length) return;
+      focusItem(which === 'first' ? 0 : all.length - 1);
+    }
+
+    // --------------------- Document-level handlers ---------------------
+
+    function onDocumentPointerDown(e) {
+      const m = menu();
+      const t = trigger();
+      // Press on the trigger — defer to the trigger's click handler
+      // (toggle). Closing here would let the subsequent click re-open.
+      if (t && t.contains(e.target)) return;
+      if (m && m.contains(e.target)) return;
+      // Defer the close to the click handler below, so a press-and-
+      // drag-off still gets cleaned up via click. We close here for
+      // immediate visual response on the common case.
+      close({ restoreFocus: false });
+    }
+
+    // Click handler — catches press-and-drag-off where pointerdown
+    // didn't close (target was inside trigger or menu but click ends
+    // outside).
+    function onDocumentClick(e) {
+      if (!state.isOpen) return;
+      const m = menu();
+      const t = trigger();
+      if (t && t.contains(e.target)) return;
+      if (m && m.contains(e.target)) return;
+      close({ restoreFocus: false });
+    }
+
+    function onDocumentKeyDown(e) {
+      if (!state.isOpen) return;
+      switch (e.key) {
+        case 'Escape':
+          e.preventDefault();
+          close({ restoreFocus: true });
+          return;
+        case 'Tab': {
+          // Move focus to the trigger BEFORE hiding the menu, so the
+          // browser's native Tab handler picks up from a known position.
+          // Adversarial fix #1 (a11y).
+          const t = trigger();
+          if (t) t.focus();
+          close({ restoreFocus: false });
+          return;
+        }
+        case 'ArrowDown':
+          e.preventDefault();
+          moveFocus(+1);
+          return;
+        case 'ArrowUp':
+          e.preventDefault();
+          moveFocus(-1);
+          return;
+        case 'Home':
+          e.preventDefault();
+          moveToEdge('first');
+          return;
+        case 'End':
+          e.preventDefault();
+          moveToEdge('last');
+          return;
+        case 'Enter':
+        case ' ': {
+          // Defense-in-depth: block activation on disabled items
+          // BEFORE the native click fires. Adversarial fix #8 (a11y).
+          const focused = document.activeElement;
+          if (focused && focused.getAttribute &&
+              focused.getAttribute('aria-disabled') === 'true') {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          if (e.key === ' ') e.preventDefault();
+          return;
+        }
+        default:
+          return;
+      }
+    }
+
+    // --------------------- Item click → handler ---------------------
+
+    function onItemClick(e) {
+      const item = e.currentTarget;
+      if (item.getAttribute('aria-disabled') === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const fmt = item.getAttribute('data-export');
+      const fn = handlerMap[fmt];
+      // Close the menu without restoring focus yet — beginExport()
+      // will disable the trigger, which would move focus away from a
+      // disabled button (most browsers). We restore focus AFTER the
+      // export completes so the trigger is the resting focus target.
+      close({ restoreFocus: false });
+      if (typeof fn === 'function') {
+        try { fn(); } catch (err) { /* handler logs its own errors */ }
+      }
+      // After the export pipeline ran (synchronous fast path) and
+      // endExport re-enabled the trigger, focus it so the next Tab
+      // press lands somewhere sensible. For async-export paths
+      // (CSV-zip, XLSX), endExport runs later and the trigger may
+      // briefly be disabled; we still focus best-effort here.
+      const t = trigger();
+      if (t && !t.disabled) t.focus();
+    }
+
+    // --------------------- Document signature (for "doc changed while
+    // open" close) ---------------------
+
+    function docSignature() {
+      return String(State.lastFileName || '') + '|' + String(State.lastRawMd ? State.lastRawMd.length : 0);
+    }
+
+    // --------------------- Gating (replaces refreshExportButtons) ---------------------
+
+    function refresh() {
+      const t = trigger();
+      const out = document.getElementById('output');
+      const hasDoc = State.lastRawMd != null &&
+                     out && out.textContent.trim().length > 0 &&
+                     out.querySelector('h1,h2,h3,h4,h5,h6,p,pre,table,ul,ol,blockquote') != null;
+      const tableCount = hasDoc ? countExportableTables(out) : 0;
+      const hasTables = hasDoc && tableCount > 0;
+      const docxLibOk = !!(Deps.htmlDocx && Deps.htmlDocx());
+      const xlsxLibOk = !!(Deps.exceljs && Deps.exceljs());
+      const busy = !!State.isExporting;
+
+      // Trigger: disabled only when no doc loaded OR mid-export. Per-
+      // format gates apply to individual items.
+      if (t) {
+        const triggerEnabled = hasDoc && !busy;
+        t.disabled = !triggerEnabled;
+        t.setAttribute('aria-disabled', String(!triggerEnabled));
+        const triggerTitle = hasDoc
+            ? (busy ? 'Export in progress…' : 'Export current document')
+            : 'Load a document first.';
+        t.title = triggerTitle;
+        // Mirror to sr-only sibling so AT users hear it on focus
+        // (title attribute is unreliable on focus). Adversarial fix #9.
+        const sr = document.getElementById('btnExportMenuReason');
+        if (sr) sr.textContent = triggerTitle;
+      }
+
+      // If menu is open and the document changed underneath us, close.
+      // refresh() is called from render() and Clear; either may change
+      // the document signature mid-open.
+      if (state.isOpen) {
+        const sig = docSignature();
+        if (state.lastDocSignature != null && sig !== state.lastDocSignature) {
+          state.lastDocSignature = sig;
+          close({ restoreFocus: false });
+          return;
+        }
+        state.lastDocSignature = sig;
+      }
+
+      // Per-item gating — same conditions and tooltip messages as the
+      // original refreshExportButtons().
+      setItem('miExportMd',  hasDoc && !busy,
+          hasDoc ? 'Export current document as .md' : 'Load a document first.',
+          hasDoc ? null : 'Disabled: load a document first.');
+
+      setItem('miExportHtml', hasDoc && !busy,
+          hasDoc ? 'Export current document as self-contained .html' : 'Load a document first.',
+          hasDoc ? null : 'Disabled: load a document first.');
+
+      let docxTip, docxReason = null;
+      if (!docxLibOk)      { docxTip = 'DOCX export library failed to load — use HTML export and open in Word.';
+                             docxReason = 'Disabled: DOCX export library failed to load.'; }
+      else if (!hasDoc)    { docxTip = 'Load a document first.';
+                             docxReason = 'Disabled: load a document first.'; }
+      else                 { docxTip = 'Export current document as .docx (Word).'; }
+      setItem('miExportDocx', hasDoc && docxLibOk && !busy, docxTip, docxReason);
+
+      let csvTip, csvReason = null;
+      if (!hasDoc)                  { csvTip = 'Load a document first.';
+                                      csvReason = 'Disabled: load a document first.'; }
+      else if (!hasTables)          { csvTip = 'No tables to export from this document.';
+                                      csvReason = 'Disabled: no tables in this document.'; }
+      else if (tableCount === 1)    { csvTip = 'Export document table as .csv'; }
+      else                          { csvTip = 'Export ' + tableCount + ' document tables as .zip of .csv files'; }
+      setItem('miExportCsv', hasTables && !busy, csvTip, csvReason);
+
+      let xlsxTip, xlsxReason = null;
+      if (!xlsxLibOk)               { xlsxTip = 'XLSX export library failed to load — use CSV export instead.';
+                                      xlsxReason = 'Disabled: XLSX export library failed to load.'; }
+      else if (!hasDoc)             { xlsxTip = 'Load a document first.';
+                                      xlsxReason = 'Disabled: load a document first.'; }
+      else if (!hasTables)          { xlsxTip = 'No tables to export from this document.';
+                                      xlsxReason = 'Disabled: no tables in this document.'; }
+      else                          { xlsxTip = 'Export ' + tableCount + ' table' +
+                                                (tableCount === 1 ? '' : 's') +
+                                                ' as .xlsx (Excel workbook)'; }
+      setItem('miExportXlsx', hasTables && xlsxLibOk && !busy, xlsxTip, xlsxReason);
+    }
+
+    function setItem(id, enabled, tooltip, srReason) {
+      const it = document.getElementById(id);
+      if (!it) return;
+      it.setAttribute('aria-disabled', String(!enabled));
+      if (tooltip) it.title = tooltip;
+      const reasonEl = document.getElementById(id + 'Reason');
+      if (reasonEl) {
+        if (!enabled && srReason) {
+          reasonEl.textContent = srReason;
+          reasonEl.hidden = false;
+        } else {
+          reasonEl.textContent = '';
+          reasonEl.hidden = true;
+        }
+      }
+    }
+
+    // --------------------- beginExport / endExport hooks ---------------------
+
+    function markExporting(on) {
+      const t = trigger();
+      if (!t) return;
+      if (on) {
+        t.setAttribute('data-exporting', 'true');
+        t.setAttribute('aria-disabled', 'true');
+        t.disabled = true;
+        // Disable items visually for the duration. We do NOT snapshot
+        // prior state — endExport() always calls refresh() which
+        // recomputes authoritative state from State / Deps. Adversarial
+        // fix #2 (state-edge-cases).
+        items().forEach(function (it) {
+          it.setAttribute('aria-disabled', 'true');
+        });
+      } else {
+        t.removeAttribute('data-exporting');
+        // refresh() (called by endExport) will recompute item gates.
+      }
+    }
+
+    // --------------------- Initial wiring ---------------------
+
+    function wire() {
+      const t = trigger();
+      const m = menu();
+      if (!t || !m) return;
+      t.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (t.disabled) return;
+        toggle();
+      });
+      // Open via ArrowDown / ArrowUp / Enter / Space on the trigger.
+      // stopPropagation prevents the document-level keydown listener
+      // (attached inside open()) from re-handling the SAME event and
+      // moving focus a second time.
+      t.addEventListener('keydown', function (e) {
+        if (t.disabled) return;
+        if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!state.isOpen) open();
+          else moveToEdge('first');
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!state.isOpen) open();
+          moveToEdge('last');
+        }
+      });
+      items().forEach(function (it) {
+        it.addEventListener('click', onItemClick);
+      });
+    }
+
+    return {
+      wire: wire,
+      refresh: refresh,
+      open: open,
+      close: close,
+      toggle: toggle,
+      markExporting: markExporting,
+      _state: state,
+    };
+  })();
+
+  // Back-compat alias — every existing call site of refreshExportButtons()
+  // is preserved; it now forwards to the menu refresh.
+  function refreshExportButtons() {
+    ExportMenu.refresh();
   }
 
   // --- Confirm unsafe export -------------------------------------------------
@@ -1797,18 +2569,12 @@ footer { unicode-bidi: isolate; }
   }
 
   // --- Begin/end export lifecycle -------------------------------------------
+  // v1.6.0 — the per-button DOM loop is replaced by ExportMenu.markExporting,
+  // which now owns the trigger + menu-item visual state during a pass.
   function beginExport() {
     if (State.isExporting) return false;
     State.isExporting = true;
-    // Mark all five export buttons as exporting (for SR + visual state).
-    ['btnExportMd', 'btnExportHtml', 'btnExportDocx', 'btnExportCsv', 'btnExportXlsx'].forEach(function (id) {
-      const b = document.getElementById(id);
-      if (b) {
-        b.setAttribute('aria-disabled', 'true');
-        b.setAttribute('data-exporting', 'true');
-        b.disabled = true;
-      }
-    });
+    ExportMenu.markExporting(true);
     // Disable Theme during export to avoid mid-clone style race.
     const tb = document.getElementById('btnTheme');
     if (tb) { tb.dataset.prevDisabled = tb.disabled ? '1' : '0'; tb.disabled = true; }
@@ -1816,13 +2582,10 @@ footer { unicode-bidi: isolate; }
   }
   function endExport(blobUrl) {
     State.isExporting = false;
-    ['btnExportMd', 'btnExportHtml', 'btnExportDocx', 'btnExportCsv', 'btnExportXlsx'].forEach(function (id) {
-      const b = document.getElementById(id);
-      if (b) { b.removeAttribute('data-exporting'); }
-    });
+    ExportMenu.markExporting(false);
     const tb = document.getElementById('btnTheme');
     if (tb) { if (tb.dataset.prevDisabled === '0') tb.disabled = false; delete tb.dataset.prevDisabled; }
-    refreshExportButtons();
+    ExportMenu.refresh();
     if (blobUrl) {
       // Defer revoke until the download anchor has had a chance to fire.
       setTimeout(function () {
@@ -2844,7 +3607,11 @@ footer { unicode-bidi: isolate; }
     const filePicker = $('filePicker');
     if (filePicker) {
       filePicker.addEventListener('change', function (e) {
-        if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+        if (e.target.files && e.target.files[0]) {
+          // Close any open menu — the rendered doc is about to change.
+          if (ExportMenu._state.isOpen) ExportMenu.close({ restoreFocus: false });
+          loadFile(e.target.files[0]);
+        }
       });
     }
 
@@ -2896,6 +3663,9 @@ footer { unicode-bidi: isolate; }
     const btnClear = $('btnClear');
     if (btnClear) {
       btnClear.addEventListener('click', function () {
+        // Close the menu if open — the document is about to vanish
+        // underneath it and stale items would mislead users.
+        if (ExportMenu._state.isOpen) ExportMenu.close({ restoreFocus: false });
         const out = $('output');
         if (out) {
           out.innerHTML = out.dataset.emptyHtml || '';
@@ -2908,28 +3678,17 @@ footer { unicode-bidi: isolate; }
         State.renderedUnsanitized = false;
         Banner.clear('unsanitized-mode');
         Banner.clear('unsanitized-mode-active');
-        refreshExportButtons();
+        ExportMenu.refresh();
       });
     }
 
-    // Wire the three export buttons. Handlers do their own gating via
-    // beginExport() (isExporting flag), confirmUnsafeIfNeeded(), and the
-    // refreshExportButtons disabled state. We deliberately do NOT gate
-    // here so users with assistive tech that bypasses :disabled still
-    // hit the friendly "Nothing to export" path.
-    const btnExportMd = $('btnExportMd');
-    if (btnExportMd) btnExportMd.addEventListener('click', exportMarkdown);
-    const btnExportHtml = $('btnExportHtml');
-    if (btnExportHtml) btnExportHtml.addEventListener('click', exportHtml);
-    const btnExportDocx = $('btnExportDocx');
-    if (btnExportDocx) btnExportDocx.addEventListener('click', exportDocx);
-    const btnExportCsv = $('btnExportCsv');
-    if (btnExportCsv) btnExportCsv.addEventListener('click', exportCsv);
-    const btnExportXlsx = $('btnExportXlsx');
-    if (btnExportXlsx) btnExportXlsx.addEventListener('click', exportXlsx);
+    // Wire the export dropdown. The trigger + items are owned by
+    // ExportMenu; clicks on items dispatch to exportMarkdown / exportHtml
+    // / exportDocx / exportCsv / exportXlsx through ExportMenu.handlerMap.
+    ExportMenu.wire();
 
-    // Initial pass: buttons disabled because no document loaded.
-    refreshExportButtons();
+    // Initial pass: trigger disabled because no document loaded.
+    ExportMenu.refresh();
 
     // Save empty state HTML for Clear (taken from the pre-existing markup).
     const out = $('output');
@@ -2948,6 +3707,8 @@ footer { unicode-bidi: isolate; }
     window.addEventListener('drop', function (e) {
       e.preventDefault();
       document.body.classList.remove('drag-over');
+      // Close any open export menu before loading a new doc.
+      if (ExportMenu._state.isOpen) ExportMenu.close({ restoreFocus: false });
       const items = e.dataTransfer && e.dataTransfer.items;
       if (items && items.length > 0 && items[0].webkitGetAsEntry) {
         const entry = items[0].webkitGetAsEntry();
@@ -3149,7 +3910,9 @@ footer { unicode-bidi: isolate; }
       tableToCsv: tableToCsv,
       countExportableTables: countExportableTables,
       extractCellText: extractCellText
-    }
+    },
+    // Scenario 9 — export dropdown surface. Exposed for Playwright.
+    exportMenu: ExportMenu
   });
 
 })();

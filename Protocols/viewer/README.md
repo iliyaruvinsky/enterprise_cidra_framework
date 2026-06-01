@@ -29,18 +29,76 @@ policy so every documenter output renders identically.
 
 ## Toolbar reference
 
+The toolbar exposes **six controls**. The five per-format export buttons were
+consolidated into a single **Export ▾** dropdown in v1.6.0.
+
 | Button | Purpose |
 |--------|---------|
 | `Open .md…` | File picker for `.md`, `.markdown`, or `.txt` files. |
 | `Dir: Auto / RTL / LTR` | Override document direction. `Auto` uses front-matter or first-strong heuristic. On boot, the label is synced to the live `html[dir]` (the empty state ships as RTL so the Hebrew prompt reads correctly). |
 | `Theme: Light / Dark` | Swaps page CSS variables AND the highlight.js stylesheet. Disabled while an export is in flight to defend the "theme race" adversarial finding. |
 | `Mirror HE Comments: Off / On` | When on, Hebrew runs inside `hljs-comment` spans get a `<bdi dir="rtl">` wrapper so they read RTL inside an LTR code block. This is a **view-time preference** — it does not modify the source file. |
-| `Clear` | Empties the current document and re-disables the export buttons. |
-| `Export .md` | Downloads the **source** Markdown as `.md`. Round-trips losslessly. Disabled until a document is loaded. |
-| `Export .html` | Downloads a self-contained `.html` file with all viewer CSS inlined. Opens identically in any browser without the CDN. Disabled until a document is loaded. |
-| `Export .docx` | Downloads a Word `.docx` produced by `html-docx-js` v0.3.1 with the Hebrew/RTL and Mermaid mitigations described below. Disabled until a document is loaded AND `html-docx-js` finished loading. |
-| `Export .csv` | Downloads the document's tables as `.csv`. **One table** → a single UTF-8 BOM + CRLF CSV file. **Two or more tables** → a `.zip` archive named `<doc>-tables.zip` containing one CSV per table, each with its own BOM. Disabled when the loaded document has no tables. Nested inner tables and tables inside `<blockquote>` are skipped (outer wins, quotations excluded). |
-| `Export .xlsx` | Downloads the document's tables as a single Excel workbook (`.xlsx`) — one worksheet per table. Header row is **bold + slate-700 fill + white text** (mirrors viewer table styling). RTL view is set per-sheet from each source table's resolved direction. Disabled when the loaded document has no tables OR when ExcelJS failed to load. |
+| `Clear` | Empties the current document and re-disables the export menu. Closes the export menu if open. |
+| `Export ▾` | Single trigger that opens a dropdown menu with all five export targets grouped into **Document formats** (`.md`, `.html`, `.docx`) and **Tabular formats** (`.csv`, `.xlsx`). Disabled until a document is loaded; per-target gating is applied to individual menu items (see [Export menu](#export-menu) below). |
+
+### Export menu
+
+Clicking **Export ▾** opens a popup grouped into two sections:
+
+- **Document formats** — `Export .md`, `Export .html`, `Export .docx`
+- **Tabular formats** — `Export .csv`, `Export .xlsx`
+
+Each menu item carries a short description (e.g. "Markdown source",
+"Standalone HTML", "Word document", "Tables as CSV", "Excel workbook")
+underneath the format name. Per-item gating mirrors the pre-v1.6.0
+per-button gating exactly:
+
+| Item | Disabled when |
+|------|---------------|
+| `Export .md` | No document loaded. |
+| `Export .html` | No document loaded. |
+| `Export .docx` | No document loaded **or** `html-docx-js` failed to load. |
+| `Export .csv` | No document loaded **or** the document has no exportable tables (nested inner tables and tables inside `<blockquote>` excluded). |
+| `Export .xlsx` | No document loaded, the document has no exportable tables, **or** `ExcelJS` failed to load. |
+
+Disabled items remain reachable by keyboard so a screen reader announces
+each item's `title` tooltip plus the associated `aria-describedby` reason
+(rendered as `sr-only` text — invisible to sighted users, audible to AT).
+The previous tooltip wording is preserved verbatim.
+
+#### Keyboard shortcuts
+
+The dropdown is a roving-tabindex menu following the WAI-ARIA Authoring
+Practices for menu widgets, with a few deliberate deviations called out
+in the adversarial review:
+
+| Key | Action |
+|-----|--------|
+| `Tab` (on trigger) | Focus the trigger. |
+| `Enter` / `Space` / `ArrowDown` (on trigger) | Open the menu and focus the first item. |
+| `ArrowUp` (on trigger) | Open the menu and focus the last item. |
+| `ArrowDown` / `ArrowUp` (inside menu) | Move focus to next / previous item. Traverses **disabled items too** so the disabled-reason text is announced. |
+| `Home` / `End` (inside menu) | Jump to first / last item. |
+| `Enter` / `Space` (on enabled item) | Activate that export. |
+| `Enter` / `Space` (on disabled item) | No-op (defense in depth — both the key handler and the click handler block activation). |
+| `Escape` | Close the menu, restore focus to the trigger. |
+| `Tab` (inside menu) | Move focus back to the trigger, then close the menu so the native Tab handler picks up the next focusable element after the trigger. |
+| Click outside | Close the menu. |
+| `resize` / `scroll` | Reposition (not destroy) the menu so on-screen-keyboard appearance and browser zoom don't dismiss it mid-interaction. |
+| `<html dir>` / `<html data-theme>` mutation | Reposition the menu while open so RTL / LTR / theme toggles cooperate with an already-visible popup. |
+
+#### Visual treatment
+
+- The popup is anchored via `inset-inline-start: 0` so it aligns to the
+  trigger's inline-start edge automatically — left in LTR, right in RTL.
+- Viewport-edge overflow flips to `inset-inline-end: 0`; bottom-edge
+  overflow flips `inset-block-end: calc(100% + 4px)` and rotates the caret
+  to point at the menu wherever it lands.
+- Dark theme uses a stronger divider colour (`--divider-strong: #484f58`)
+  so the dropdown edge does not disappear into `--toolbar-bg`.
+- `prefers-reduced-motion: reduce` disables both the entry translate and
+  the caret rotation (some users with vestibular conditions are sensitive
+  to rotation regardless of duration).
 
 The file-info panel shows the loaded filename, size, and detected
 encoding (UTF-8, UTF-16 LE, UTF-16 BE). A warning badge appears if the
@@ -556,6 +614,7 @@ documentation. Wire-in points:
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.6.0 | 2026-06-01 | **Toolbar consolidation**: the five per-format export buttons (`Export .md` / `.html` / `.docx` / `.csv` / `.xlsx`) are replaced by a single **`Export ▾`** dropdown trigger that opens a roving-tabindex menu grouped into **Document formats** (`.md`, `.html`, `.docx`) and **Tabular formats** (`.csv`, `.xlsx`). Per-target gating, tooltip wording, and the `confirmUnsafeIfNeeded` / `beginExport` / `endExport` orchestration are unchanged — the menu only changes the event source; existing `exportMarkdown` / `exportHtml` / `exportDocx` / `exportCsv` / `exportXlsx` handler functions are bit-for-bit identical. Critical+high adversarial fixes folded in: (1) **arrow keys traverse disabled items** so the sr-only reason text is announced (the previous skip-disabled behaviour silently swallowed the very accessibility affordance it was meant to expose); (2) **Tab moves focus to the trigger BEFORE hiding the menu**, so the browser's native Tab handler resumes from a deterministic position rather than dropping focus to `<body>`; (3) **all-items-disabled state focuses item 0 anyway** so the menu is never a keyboard dead end; (4) **`sr-only` disabled-reason on the trigger itself** (`aria-describedby="btnExportMenuReason"`) — `title=` alone is unreliable on keyboard focus across NVDA / JAWS / VoiceOver; (5) **resize and scroll reposition** instead of destroying the menu (hostile to mobile virtual keyboards, browser zoom, tablet rotation); (6) **`MutationObserver` on `<html dir>` / `<html data-theme>`** repositions the open menu so theme/dir toggles mid-open are non-destructive; (7) **position-aware shadow + caret rotation** (`data-position="above"` flips the shadow direction and keeps the caret pointing at the menu wherever it lands); (8) **stacked menu-item layout** (name above description) eliminates the RTL flexbox column-reversal bug that a two-column `space-between` would have produced for mixed Hebrew/English content; (9) **`--divider-strong` / `--hover-bg` tokens per theme** so the dropdown edge and item hover state remain visible in dark mode where the default `--border` and `--toolbar-bg` are too close in luminance; (10) **Enter / Space defense-in-depth block on disabled items** in the keydown handler (the previous design relied solely on `onItemClick` to short-circuit, which a future listener could bypass); (11) **`prefers-reduced-motion` disables caret rotation entirely**, not just its transition; (12) **placeMenu accounts for the 4 px entry translate** so bottom-edge overflow isn't missed by exactly the transform offset; (13) **click handler on `document`** catches press-and-drag-off escape paths where pointerdown was suppressed because the press started on the trigger or menu; (14) **menu auto-closes on Open / Clear / drag-drop** so the rendered doc doesn't change underneath stale items; (15) **document-signature change while open closes the menu** (defense-in-depth in case a programmatic `render()` slips past the explicit close calls). The `refreshExportButtons()` function is preserved as a one-line forward to `ExportMenu.refresh()` so test code at `window.__cidraViewer.exports.refreshExportButtons` continues to work. Playwright Scenario 9 adds 35+ assertions covering trigger presence + ARIA wiring, startup disabled state, post-load enable, click-to-open / Escape-to-close / Tab-to-close / outside-click-to-close, ArrowDown/Up navigation across enabled and disabled items, Home/End edge jumps, disabled-item activation blocked, enabled-item activation triggers the corresponding export, dark theme inheritance, dropdown CSS contract. |
 | 1.5.0 | 2026-06-01 | Table export pipeline added: `Export .csv` / `Export .xlsx`. SRI-pinned `exceljs@4.4.0` and `jszip@3.10.1` with `./vendor/exceljs.min.js` / `./vendor/jszip.min.js` fallback. CSV path: RFC 4180 UTF-8 BOM + CRLF quoting, single-file for N=1 table, ZIP-of-CSVs (`<doc>-tables.zip`) for N>=2 tables. XLSX path: one worksheet per table, bold + slate-700 fill + white header row, slate-300 inner cell borders, per-sheet RTL view, frozen header pane, auto column widths, landscape page setup, all cells forced text format (`numFmt = '@'`) to defeat Excel auto-coercion of version strings / account numbers. Critical+high adversarial fixes folded in: (1) **nested tables skipped** (outer wins) — inner-table textContent leakage bounded by stripping inner `<table>` from cell clones in `extractCellText`; (2) **tables inside `<blockquote>` excluded** (quotations, not data); (3) **tables inside `<details>` use `<summary>` text** as preferred name; (4) **centralized sheet-name resolution** so CSV and XLSX produce identical canonical names (underscore-suffix style `_2`, `_3`); (5) **grapheme-aware truncation** (`Array.from` for code-point safety + trailing combining-mark stripping for Hebrew niqqud / cantillation); (6) **32,767-char cell cap** with `... [truncated]` marker (Excel hard limit, applied to both CSV and XLSX); (7) **CSV formula-injection guard** — cells starting with `=`, `+`, `-`, `@`, `\t`, `\r` get a leading apostrophe to neutralize Excel auto-execution; (8) **NBSP + bidi-mark aware whitespace normalization** so CSV and XLSX agree byte-for-byte on shared content; (9) **NFC cell-text normalization** for decomposed Hebrew round-trips; (10) **apostrophe + reserved name stripping** in sheet names (`'`, `History`); (11) **per-cell text format (`@`)** to prevent date / number auto-coercion of `1.4.4`, `5/2024`, leading-zero account IDs; (12) **soft-cap warning at >50 tables** + lower JSZip compression level when N>20; (13) **truncation-count aggregation** banner so users know if cells were capped. Five-button toolbar export group (Md / Html / Docx / Csv / Xlsx); `beginExport` / `endExport` race-guards extended to all five. Playwright Scenario 8 with 26 assertions covers button presence, enable/disable lifecycle, CSV download (single + multi-table), XLSX download (sheet count, bold header, slate-700 fill, Hebrew preservation, sheet-name derivation), no-tables disable path. |
 | 1.4.0 | 2026-06-01 | Table styling overhaul (MRP v1.2.0): GitHub-grade visual look with dark slate-700 header, subtle slate-50 zebra body, slate-300/400 borders, 8x14 padding. New `--tbl-*` CSS variables driving all three surfaces (viewer / `.html` / `.docx`); `prepareCloneForDocxExport` extended with `inlineTableStylesForDocx` that resolves every var() to a literal hex (Word cannot read `var()`). `.docx` always bakes the light theme (`buildHtmlDocument({forLightTheme:true})` strips the dark-theme block AND forces `data-theme="light"`). Critical+high adversarial fixes folded in: dark-theme code-chip contrast lift, `background-clip:padding-box` to prevent Word/LibreOffice padding divergence, merged-cell zebra neutralization, nested-table double-paint prevention, RTL-text-align specificity raised above `text-align:start`, `unicode-bidi:isolate-override` on code-only cells to defeat Hebrew-in-code re-flipping, dropped table-level border to avoid Word's double-frame quirk, deduplicating `appendInlineStyle`. Playwright Scenario 7 with 31 assertions (viewer light + dark + RTL, HTML export style block + pre-baked zebra, DOCX literal hex + no var() + no dark theme leak). |
 | 1.3.0 | 2026-06-01 | Export pipeline added: `Export .md` / `Export .html` / `Export .docx`. SRI-pinned `html-docx-js` v0.3.1 with `./vendor/html-docx.min.js` fallback. Critical+high adversarial fixes folded in: `State.isExporting` double-click guard, NFC + reserved-char + 120-UTF16 filename sanitization with Hebrew preservation, empty-document gating, large-document (>5MB) warning, `<bdi>` content wrapped in U+2068/U+2069 isolates before DOCX serialization, inline `direction:rtl` style on every `dir=rtl` block (Word honors inline CSS where it ignores the `dir` attribute), inline SVG → `data:image/svg+xml` substitution for Mermaid (with visible fallback marker), Theme button disabled during export (mid-export race), `Render anyway` content propagation confirm dialog, toast confirmation, Dir button label synced to live `html[dir]` on boot, Playwright suite extended with Scenarios 5 (all-buttons-respond) + 6 (round-trip exports), 51 new assertions. |

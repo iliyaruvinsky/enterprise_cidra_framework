@@ -164,13 +164,246 @@ body {
   opacity: 0.7;
   cursor: progress;
 }
-.toolbar .export-group {
+/* ---------- Export menu (v1.6.0 — single trigger replaces 5 buttons) ---------- */
+
+/* Anchor for the absolutely-positioned popup. border-inline-start
+   recreates the visual divider the old .export-group provided. The
+   --divider-strong custom property gives dark theme a stronger edge
+   than the default --border, which fades into --toolbar-bg. */
+.export-menu-root {
+  position: relative;
   display: inline-flex;
-  gap: 4px;
-  border-inline-start: 1px solid var(--border);
+  align-items: center;
+  border-inline-start: 1px solid var(--divider-strong, var(--border));
   padding-inline-start: 8px;
-  margin-inline-start: 4px;
+  margin-inline-start: 2px;
 }
+
+/* Trigger button — inherits .toolbar button styling above; adds the
+   caret affordance and intrinsic flex layout for icon spacing. */
+.export-menu-root .trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-menu-root .trigger .caret {
+  display: inline-block;
+  font-size: 0.85em;
+  line-height: 1;
+  transition: transform 140ms ease-out;
+}
+/* Position-aware caret rotation. When the popup is below the trigger
+   (default) and open, rotate 180deg so the caret points UP toward the
+   menu's top edge (visual "open above me"). When the popup flips
+   above the trigger, no rotation — the caret continues to point DOWN
+   so it visually indicates "open below me from your perspective". */
+.export-menu-root .trigger[aria-expanded="true"][data-menu-position="below"] .caret,
+.export-menu-root .trigger[aria-expanded="true"]:not([data-menu-position]) .caret {
+  transform: rotate(180deg);
+}
+.export-menu-root .trigger[aria-expanded="true"][data-menu-position="above"] .caret {
+  transform: rotate(0deg);
+}
+
+/* Popup container. inset-inline-start: 0 aligns the menu's inline-start
+   edge to the anchor's inline-start edge — left in LTR, right in RTL —
+   automatically. placeMenu() flips to inset-inline-end on overflow. */
+.export-menu-root .menu {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 1000;
+  min-inline-size: 240px;
+  max-inline-size: min(320px, 96vw);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--divider-strong, var(--border));
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  font-family: var(--sans);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+  pointer-events: none;
+}
+.export-menu-root .menu[data-open="true"] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.export-menu-root .menu[hidden] {
+  display: none;
+}
+/* Position-aware shadow — when the menu opens ABOVE the trigger the
+   shadow flips upward so it doesn't look like a smudge inside the
+   toolbar below the menu. */
+.export-menu-root .menu[data-position="above"] {
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Group label — provides BOTH a visible section heading and the
+   accessible name for the wrapping role="group". Not aria-hidden:
+   per the adversarial review, NVDA + Firefox can announce groups via
+   aria-labelledby even when the source is not aria-hidden, and we
+   prefer the sighted-and-SR-user parity. */
+.export-menu-root .menu-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 12px 4px;
+  user-select: none;
+}
+
+/* Separator between Document / Tabular sections. */
+.export-menu-root .menu-divider {
+  block-size: 1px;
+  border: 0;
+  background: var(--border);
+  margin-block: 4px;
+  margin-inline: 8px;
+}
+
+/* Menu item — stacked layout (name above description). Stacking
+   eliminates the RTL flexbox column-reversal bug that a two-column
+   space-between layout would have produced when mixed Hebrew/English
+   content is present. */
+.export-menu-root .menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  inline-size: 100%;
+  min-block-size: 36px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+  /* pointer-events:none from .toolbar button[aria-disabled="true"]
+     would block click on disabled items — we WANT clicks so we can
+     intercept them in onItemClick and stop propagation. Re-enable. */
+  pointer-events: auto;
+}
+.export-menu-root .menu-item:hover:not([aria-disabled="true"]),
+.export-menu-root .menu-item:focus-visible:not([aria-disabled="true"]) {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.export-menu-root .menu-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Disabled items still need keyboard focusability for arrow-key
+   traversal (so the sr-only reason can be announced) — keep the
+   outline visible on focus even when disabled. */
+.export-menu-root .menu-item[aria-disabled="true"]:focus-visible {
+  outline: 2px dashed var(--muted);
+  outline-offset: 2px;
+}
+.export-menu-root .menu-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  text-align: start;
+}
+.export-menu-root .menu-item-desc {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: start;
+  white-space: nowrap;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mid-export state for the trigger — same pattern as the old buttons. */
+.export-menu-root .trigger[aria-disabled="true"][data-exporting="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* Screen-reader-only helper for disabled-reason text. */
+.export-menu-root .sr-only,
+.toolbar .sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduced motion — drop transitions and the translateY entry. */
+@media (prefers-reduced-motion: reduce) {
+  .export-menu-root .menu {
+    transition: opacity 1ms linear;
+    transform: none;
+  }
+  .export-menu-root .menu[data-open="true"] {
+    transform: none;
+  }
+  .export-menu-root .trigger .caret {
+    transition: transform 1ms linear;
+  }
+  /* No caret rotation under reduced motion — some users with
+     vestibular disorders are sensitive to rotation regardless of
+     transition speed. */
+  .export-menu-root .trigger[aria-expanded="true"] .caret {
+    transform: none !important;
+  }
+}
+
+/* Mobile — wider tap targets, slightly narrower min width. */
+@media (max-width: 600px) {
+  .export-menu-root .menu {
+    min-inline-size: 200px;
+    max-inline-size: 92vw;
+  }
+  .export-menu-root .menu-item {
+    min-block-size: 44px;
+    padding: 10px 12px;
+  }
+  .export-menu-root .menu-item-desc {
+    font-size: 11px;
+  }
+}
+
+/* Dark-theme overrides. --divider-strong gives the dropdown edge
+   enough contrast against --toolbar-bg in dark mode; default
+   var(--border) is too subtle. --hover-bg is a translucent overlay
+   that maintains a visible delta against --bg regardless of palette. */
+:root {
+  --divider-strong: var(--border);
+  --hover-bg: rgba(0, 0, 0, 0.06);
+}
+html[data-theme="dark"] {
+  --divider-strong: #484f58;
+  --hover-bg: rgba(255, 255, 255, 0.08);
+}
+html[data-theme="dark"] .export-menu-root .menu {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+html[data-theme="dark"] .export-menu-root .menu[data-position="above"] {
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+}
+/* Defensive focus-ring contrast in dark theme — a 1px box-shadow in
+   --bg color creates a separator ring so the focus outline never
+   touches the highlight bg directly. */
+html[data-theme="dark"] .export-menu-root .menu-item:focus-visible:not([aria-disabled="true"]) {
+  outline-color: #79c0ff;
+  box-shadow: 0 0 0 1px var(--bg);
+}
+
 .toolbar input[type=file] { display: none; }
 .toolbar .file-info {
   font-size: 12px;

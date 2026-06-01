@@ -276,13 +276,19 @@ def main():
                    page.locator("#fileInfo").text_content().strip() == "")
             record("05.btnClear.state_lastRawMd_null",
                    page.evaluate("() => window.__cidraViewer.state.lastRawMd") is None)
-            # Export buttons should be disabled after clear
-            record("05.btnClear.export_md_disabled",
-                   page.locator("#btnExportMd").is_disabled())
-            record("05.btnClear.export_html_disabled",
-                   page.locator("#btnExportHtml").is_disabled())
-            record("05.btnClear.export_docx_disabled",
-                   page.locator("#btnExportDocx").is_disabled())
+            # v1.6.0 — the five per-format buttons were replaced by a
+            # single Export ▾ trigger. After Clear the trigger must be
+            # disabled (no document loaded).
+            record("05.btnClear.export_trigger_disabled",
+                   page.locator("#btnExportMenu").is_disabled())
+            # Also verify the old per-format buttons are gone — they were
+            # consolidated into the dropdown menu items.
+            record("05.btnClear.old_btnExportMd_removed",
+                   page.locator("#btnExportMd").count() == 0)
+            record("05.btnClear.old_btnExportHtml_removed",
+                   page.locator("#btnExportHtml").count() == 0)
+            record("05.btnClear.old_btnExportDocx_removed",
+                   page.locator("#btnExportDocx").count() == 0)
 
         # 5.6 — Inject a banner and close it with ×
         page.evaluate("""
@@ -322,25 +328,37 @@ def main():
             page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
             page.wait_for_timeout(2500)
 
-            # Verify export buttons enabled after load
-            record("06.btnExportMd.enabled_after_load",
-                   page.locator("#btnExportMd").is_enabled())
-            record("06.btnExportHtml.enabled_after_load",
-                   page.locator("#btnExportHtml").is_enabled())
+            # v1.6.0 — trigger enables after document load; individual
+            # menu items expose enabled state via aria-disabled.
+            record("06.btnExportMenu.enabled_after_load",
+                   page.locator("#btnExportMenu").is_enabled())
+            # Open the menu so we can inspect item enabled state.
+            page.locator("#btnExportMenu").click()
+            page.wait_for_timeout(200)
+            record("06.miExportMd.enabled_after_load",
+                   page.locator("#miExportMd").get_attribute("aria-disabled") == "false")
+            record("06.miExportHtml.enabled_after_load",
+                   page.locator("#miExportHtml").get_attribute("aria-disabled") == "false")
             # DOCX gated also on html-docx-js
             html_docx_loaded = page.evaluate(
                 "() => window.__cidraViewer.deps.htmlDocx()"
             )
             record("06.deps.htmlDocx_loaded", bool(html_docx_loaded))
             if html_docx_loaded:
-                record("06.btnExportDocx.enabled_after_load",
-                       page.locator("#btnExportDocx").is_enabled())
+                record("06.miExportDocx.enabled_after_load",
+                       page.locator("#miExportDocx").get_attribute("aria-disabled") == "false")
+            # Close the menu before triggering exports (each export
+            # click re-opens the menu, clicks the item, menu auto-closes).
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
 
             source_md = FIXTURE_MD.read_text(encoding="utf-8")
 
             # ---- Export .md ----
+            page.locator("#btnExportMenu").click()
+            page.wait_for_timeout(200)
             with page.expect_download(timeout=15000) as dl_info:
-                page.locator("#btnExportMd").click()
+                page.locator("#miExportMd").click()
             dl_md = dl_info.value
             md_path = DOWNLOADS / dl_md.suggested_filename
             dl_md.save_as(str(md_path))
@@ -357,8 +375,10 @@ def main():
             page.wait_for_timeout(300)
 
             # ---- Export .html ----
+            page.locator("#btnExportMenu").click()
+            page.wait_for_timeout(200)
             with page.expect_download(timeout=15000) as dl_info:
-                page.locator("#btnExportHtml").click()
+                page.locator("#miExportHtml").click()
             dl_html = dl_info.value
             html_path = DOWNLOADS / dl_html.suggested_filename
             dl_html.save_as(str(html_path))
@@ -381,8 +401,10 @@ def main():
 
             # ---- Export .docx (only if library loaded) ----
             if html_docx_loaded:
+                page.locator("#btnExportMenu").click()
+                page.wait_for_timeout(200)
                 with page.expect_download(timeout=30000) as dl_info:
-                    page.locator("#btnExportDocx").click()
+                    page.locator("#miExportDocx").click()
                 dl_docx = dl_info.value
                 docx_path = DOWNLOADS / dl_docx.suggested_filename
                 dl_docx.save_as(str(docx_path))
@@ -430,17 +452,15 @@ def main():
                     record("06.docx.is_valid_zip", False, "err=" + str(ex))
 
             # Double-click race: second click during in-flight export
-            # should be no-op (button disabled). Stage a forced state.
+            # should be no-op (trigger disabled). Stage a forced state.
             page.evaluate("""
                 () => {
                   window.__cidraViewer.state.isExporting = true;
                   window.__cidraViewer.exports.refreshExportButtons();
                 }
             """)
-            record("06.race.md_disabled_while_exporting",
-                   page.locator("#btnExportMd").is_disabled())
-            record("06.race.html_disabled_while_exporting",
-                   page.locator("#btnExportHtml").is_disabled())
+            record("06.race.trigger_disabled_while_exporting",
+                   page.locator("#btnExportMenu").is_disabled())
             page.evaluate("""
                 () => {
                   window.__cidraViewer.state.isExporting = false;
@@ -688,8 +708,11 @@ def main():
                    "odd=%s even=%s" % (rtl_zebra["odd"], rtl_zebra["even"]))
 
             # ---- 7.9 HTML export embeds the table CSS rules ----
+            # v1.6.0: dispatch via the dropdown menu.
+            page.locator("#btnExportMenu").click()
+            page.wait_for_timeout(200)
             with page.expect_download(timeout=15000) as dl_info:
-                page.locator("#btnExportHtml").click()
+                page.locator("#miExportHtml").click()
             dl_html = dl_info.value
             html_path = DOWNLOADS / dl_html.suggested_filename
             dl_html.save_as(str(html_path))
@@ -714,8 +737,10 @@ def main():
             html_docx_loaded = page.evaluate(
                 "() => window.__cidraViewer.deps.htmlDocx()")
             if html_docx_loaded:
+                page.locator("#btnExportMenu").click()
+                page.wait_for_timeout(200)
                 with page.expect_download(timeout=30000) as dl_info:
-                    page.locator("#btnExportDocx").click()
+                    page.locator("#miExportDocx").click()
                 dl_docx = dl_info.value
                 docx_path = DOWNLOADS / dl_docx.suggested_filename
                 dl_docx.save_as(str(docx_path))
@@ -817,25 +842,33 @@ def main():
         page.goto(VIEWER)
         page.wait_for_load_state("networkidle", timeout=30000)
 
-        # 8.1 — Buttons exist with correct labels
-        btn_csv = page.locator("#btnExportCsv")
-        btn_xlsx = page.locator("#btnExportXlsx")
-        record("08.btnExportCsv.exists",
-               btn_csv.count() == 1)
-        record("08.btnExportXlsx.exists",
-               btn_xlsx.count() == 1)
-        record("08.btnExportCsv.label",
-               btn_csv.text_content().strip() == "Export .csv",
-               "got=" + btn_csv.text_content().strip())
-        record("08.btnExportXlsx.label",
-               btn_xlsx.text_content().strip() == "Export .xlsx",
-               "got=" + btn_xlsx.text_content().strip())
+        # v1.6.0 — CSV / XLSX are now menu items inside the Export ▾
+        # dropdown rather than top-level toolbar buttons. The trigger
+        # gates the menu visibility; per-item gating uses aria-disabled.
+        trigger = page.locator("#btnExportMenu")
 
-        # 8.2 — Both disabled at startup (no document)
-        record("08.btnExportCsv.disabled_at_startup",
-               btn_csv.is_disabled())
-        record("08.btnExportXlsx.disabled_at_startup",
-               btn_xlsx.is_disabled())
+        # 8.1 — Open the menu (once doc loaded) to inspect items.
+        # At startup the trigger is disabled, so we cannot open the
+        # menu — verify the items exist in the DOM regardless.
+        mi_csv = page.locator("#miExportCsv")
+        mi_xlsx = page.locator("#miExportXlsx")
+        record("08.miExportCsv.exists",
+               mi_csv.count() == 1)
+        record("08.miExportXlsx.exists",
+               mi_xlsx.count() == 1)
+        # Labels live in the menu-item-name span.
+        csv_label = page.locator("#miExportCsv .menu-item-name").text_content().strip()
+        xlsx_label = page.locator("#miExportXlsx .menu-item-name").text_content().strip()
+        record("08.miExportCsv.label",
+               csv_label == "Export .csv",
+               "got=" + csv_label)
+        record("08.miExportXlsx.label",
+               xlsx_label == "Export .xlsx",
+               "got=" + xlsx_label)
+
+        # 8.2 — Trigger disabled at startup (no document loaded).
+        record("08.trigger.disabled_at_startup",
+               trigger.is_disabled())
 
         # Screenshot the toolbar with the two new buttons visible (no
         # document loaded — both should appear in the export group).
@@ -866,11 +899,19 @@ def main():
                    n_tables_rendered > 0,
                    "n=%d" % n_tables_rendered)
 
-            # 8.4 — Both enable after loading doc with tables
-            record("08.btnExportCsv.enabled_after_load",
-                   not btn_csv.is_disabled())
-            record("08.btnExportXlsx.enabled_after_load",
-                   not btn_xlsx.is_disabled())
+            # 8.4 — Trigger enables; both items report aria-disabled=false.
+            record("08.trigger.enabled_after_load",
+                   not trigger.is_disabled())
+            # Open the menu to inspect item state.
+            trigger.click()
+            page.wait_for_timeout(200)
+            record("08.miExportCsv.enabled_after_load",
+                   mi_csv.get_attribute("aria-disabled") == "false")
+            record("08.miExportXlsx.enabled_after_load",
+                   mi_xlsx.get_attribute("aria-disabled") == "false")
+            # Close menu so subsequent menu-open clicks land cleanly.
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
 
             # Verify deps loaded
             exceljs_loaded = page.evaluate(
@@ -880,9 +921,11 @@ def main():
             record("08.deps.exceljs_loaded", bool(exceljs_loaded))
             record("08.deps.jszip_loaded", bool(jszip_loaded))
 
-            # 8.5 — Click Export .csv → capture download
+            # 8.5 — Click Export .csv via the dropdown → capture download
+            trigger.click()
+            page.wait_for_timeout(200)
             with page.expect_download(timeout=15000) as csv_dl_info:
-                btn_csv.click()
+                mi_csv.click()
             csv_dl = csv_dl_info.value
             csv_path = DOWNLOADS / csv_dl.suggested_filename
             csv_dl.save_as(str(csv_path))
@@ -953,10 +996,12 @@ def main():
                     record("08.csv.python_csv_parses", False,
                            "err=" + str(ex))
 
-            # 8.6 — Click Export .xlsx → capture download
+            # 8.6 — Click Export .xlsx via the dropdown → capture download
             if exceljs_loaded:
+                trigger.click()
+                page.wait_for_timeout(200)
                 with page.expect_download(timeout=30000) as xlsx_dl_info:
-                    btn_xlsx.click()
+                    mi_xlsx.click()
                 xlsx_dl = xlsx_dl_info.value
                 xlsx_path = DOWNLOADS / xlsx_dl.suggested_filename
                 xlsx_dl.save_as(str(xlsx_path))
@@ -1082,18 +1127,23 @@ def main():
             record("08.synth.no_tables_rendered",
                    n_tables_after_synth == 0,
                    "n=%d" % n_tables_after_synth)
-            record("08.synth.btnExportCsv_disabled",
-                   btn_csv.is_disabled(),
-                   "disabled=%r" % btn_csv.is_disabled())
-            record("08.synth.btnExportXlsx_disabled",
-                   btn_xlsx.is_disabled(),
-                   "disabled=%r" % btn_xlsx.is_disabled())
+            # Trigger remains ENABLED (document is loaded — .md/.html
+                       # exports still work). CSV/XLSX items become disabled.
+            record("08.synth.trigger_still_enabled",
+                   not trigger.is_disabled(),
+                   "disabled=%r" % trigger.is_disabled())
+            record("08.synth.miExportCsv_disabled",
+                   mi_csv.get_attribute("aria-disabled") == "true",
+                   "aria-disabled=%r" % mi_csv.get_attribute("aria-disabled"))
+            record("08.synth.miExportXlsx_disabled",
+                   mi_xlsx.get_attribute("aria-disabled") == "true",
+                   "aria-disabled=%r" % mi_xlsx.get_attribute("aria-disabled"))
             # 8.8 — Tooltip mentions "No tables"
-            csv_title = btn_csv.get_attribute("title") or ""
+            csv_title = mi_csv.get_attribute("title") or ""
             record("08.synth.csv_tooltip_no_tables",
                    "No tables" in csv_title,
                    "title=" + repr(csv_title))
-            xlsx_title = btn_xlsx.get_attribute("title") or ""
+            xlsx_title = mi_xlsx.get_attribute("title") or ""
             record("08.synth.xlsx_tooltip_no_tables",
                    "No tables" in xlsx_title,
                    "title=" + repr(xlsx_title))
@@ -1101,6 +1151,377 @@ def main():
             record("08.no_pageerror",
                    len(page_errors) == 0,
                    "errs=" + repr(page_errors[:3]))
+        ctx.close()
+
+        # ====================================================================
+        # Scenario 9 — Export dropdown menu (v1.6.0)
+        # Trigger / menu wiring, keyboard model, click-outside, dark theme
+        # parity, RTL alignment, screenshots of closed + open states.
+        # ====================================================================
+        ctx = browser.new_context(
+            viewport={"width": 1400, "height": 900},
+            accept_downloads=True,
+        )
+        page = ctx.new_page()
+        page_errors = []
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
+        page.goto(VIEWER)
+        page.wait_for_load_state("networkidle", timeout=30000)
+
+        trigger = page.locator("#btnExportMenu")
+        menu = page.locator("#exportMenu")
+
+        # 9.1 — Trigger exists with the expected label and ARIA wiring.
+        record("09.trigger.exists",
+               trigger.count() == 1)
+        record("09.trigger.has_caret_text",
+               "Export" in (trigger.text_content() or ""))
+        record("09.trigger.aria_haspopup",
+               trigger.get_attribute("aria-haspopup") == "menu")
+        record("09.trigger.aria_controls",
+               trigger.get_attribute("aria-controls") == "exportMenu")
+        record("09.trigger.aria_expanded_false_initial",
+               trigger.get_attribute("aria-expanded") == "false")
+        record("09.trigger.aria_describedby",
+               trigger.get_attribute("aria-describedby") == "btnExportMenuReason")
+
+        # 9.2 — Trigger disabled at startup.
+        record("09.trigger.disabled_at_startup",
+               trigger.is_disabled())
+        record("09.trigger.aria_disabled_true_initial",
+               trigger.get_attribute("aria-disabled") == "true")
+        record("09.trigger.title_load_first",
+               (trigger.get_attribute("title") or "").startswith("Load a document"))
+
+        # 9.3 — Menu container present but hidden, with correct role wiring.
+        record("09.menu.hidden_initially",
+               menu.get_attribute("hidden") is not None)
+        record("09.menu.role_menu",
+               menu.get_attribute("role") == "menu")
+        record("09.menu.aria_labelledby_trigger",
+               menu.get_attribute("aria-labelledby") == "btnExportMenu")
+
+        # 9.4 — Old per-format buttons are gone.
+        record("09.old_btnExportMd_removed",
+               page.locator("#btnExportMd").count() == 0)
+        record("09.old_btnExportHtml_removed",
+               page.locator("#btnExportHtml").count() == 0)
+        record("09.old_btnExportDocx_removed",
+               page.locator("#btnExportDocx").count() == 0)
+        record("09.old_btnExportCsv_removed",
+               page.locator("#btnExportCsv").count() == 0)
+        record("09.old_btnExportXlsx_removed",
+               page.locator("#btnExportXlsx").count() == 0)
+
+        # 9.5 — Menu has exactly 5 menuitem children in the right order.
+        items = page.locator("#exportMenu [role='menuitem']")
+        record("09.menu.item_count_5",
+               items.count() == 5,
+               "n=%d" % items.count())
+        record("09.menu.item_order_md_first",
+               items.nth(0).get_attribute("id") == "miExportMd")
+        record("09.menu.item_order_html_second",
+               items.nth(1).get_attribute("id") == "miExportHtml")
+        record("09.menu.item_order_docx_third",
+               items.nth(2).get_attribute("id") == "miExportDocx")
+        record("09.menu.item_order_csv_fourth",
+               items.nth(3).get_attribute("id") == "miExportCsv")
+        record("09.menu.item_order_xlsx_fifth",
+               items.nth(4).get_attribute("id") == "miExportXlsx")
+
+        # 9.6 — Screenshot: closed dropdown (no document loaded).
+        # Take a separate screenshot AFTER loading so the trigger is enabled.
+
+        if FIXTURE_MD.exists():
+            page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+            page.wait_for_timeout(2500)
+
+            # 9.7 — Trigger enables after document load.
+            record("09.trigger.enabled_after_load",
+                   trigger.is_enabled())
+            record("09.trigger.aria_disabled_false_after_load",
+                   trigger.get_attribute("aria-disabled") == "false")
+
+            # 9.8 — Closed-state screenshot of the toolbar.
+            try:
+                page.locator(".toolbar").scroll_into_view_if_needed()
+                page.screenshot(
+                    path=str(OUTPUT / "09_dropdown_closed.png"),
+                    full_page=False,
+                    clip={"x": 0, "y": 0, "width": 1400, "height": 120})
+            except Exception:
+                page.screenshot(
+                    path=str(OUTPUT / "09_dropdown_closed.png"),
+                    full_page=False)
+            record("09.screenshot.closed_saved",
+                   (OUTPUT / "09_dropdown_closed.png").exists())
+
+            # 9.9 — Click trigger opens menu, sets aria-expanded=true,
+            # first item gets focus.
+            trigger.click()
+            page.wait_for_timeout(200)
+            record("09.click_opens.aria_expanded_true",
+                   trigger.get_attribute("aria-expanded") == "true")
+            record("09.click_opens.menu_not_hidden",
+                   menu.get_attribute("hidden") is None)
+            record("09.click_opens.data_open_true",
+                   menu.get_attribute("data-open") == "true")
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.click_opens.first_item_focused",
+                   focused_id == "miExportMd",
+                   "focused=%r" % focused_id)
+
+            # 9.10 — Group labels present.
+            record("09.menu.group_label_docs",
+                   page.locator("#grpExportDocs").text_content().strip() ==
+                   "Document formats")
+            record("09.menu.group_label_tab",
+                   page.locator("#grpExportTab").text_content().strip() ==
+                   "Tabular formats")
+
+            # 9.11 — Open-state screenshot.
+            try:
+                page.screenshot(
+                    path=str(OUTPUT / "09_dropdown_open.png"),
+                    full_page=False,
+                    clip={"x": 0, "y": 0, "width": 1400, "height": 400})
+            except Exception:
+                page.screenshot(
+                    path=str(OUTPUT / "09_dropdown_open.png"),
+                    full_page=False)
+            record("09.screenshot.open_saved",
+                   (OUTPUT / "09_dropdown_open.png").exists())
+
+            # 9.12 — ArrowDown moves to next item.
+            page.keyboard.press("ArrowDown")
+            page.wait_for_timeout(100)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.arrow_down.moves_to_html",
+                   focused_id == "miExportHtml",
+                   "focused=%r" % focused_id)
+
+            # 9.13 — End jumps to last item.
+            page.keyboard.press("End")
+            page.wait_for_timeout(100)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.end.jumps_to_xlsx",
+                   focused_id == "miExportXlsx",
+                   "focused=%r" % focused_id)
+
+            # 9.14 — Home jumps to first item.
+            page.keyboard.press("Home")
+            page.wait_for_timeout(100)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.home.jumps_to_md",
+                   focused_id == "miExportMd",
+                   "focused=%r" % focused_id)
+
+            # 9.15 — Arrow keys traverse disabled items too (a11y fix).
+            # If CSV / XLSX are disabled (no tables), ArrowDown from
+            # Docx should still land on them so the reason is announced.
+            # We can't guarantee disabled state on RK1 README (it has
+            # tables), so verify with a synthetic no-tables doc.
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+            no_tables = ("# No Tables\n\nJust prose, no tables to be found.\n")
+            page.evaluate(
+                """(md) => {
+                    window.__cidraViewer.state.lastFileName = 'no_tables_s9.md';
+                    window.__cidraViewer.render(md, 'no_tables_s9.md');
+                    window.__cidraViewer.exports.refreshExportButtons();
+                }""",
+                no_tables)
+            page.wait_for_timeout(200)
+            trigger.click()
+            page.wait_for_timeout(200)
+            # CSV item should be disabled.
+            csv_aria = page.locator("#miExportCsv").get_attribute("aria-disabled")
+            record("09.synth.csv_disabled",
+                   csv_aria == "true",
+                   "aria-disabled=%r" % csv_aria)
+            # ArrowDown four times from miExportMd reaches miExportCsv.
+            page.keyboard.press("Home")
+            page.wait_for_timeout(80)
+            for _ in range(3):
+                page.keyboard.press("ArrowDown")
+                page.wait_for_timeout(80)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.synth.arrow_reaches_disabled_csv",
+                   focused_id == "miExportCsv",
+                   "focused=%r" % focused_id)
+            # Verify the sr-only reason is populated.
+            csv_reason = page.locator("#miExportCsvReason").text_content()
+            record("09.synth.csv_reason_populated",
+                   csv_reason and "tables" in csv_reason.lower(),
+                   "reason=%r" % csv_reason)
+
+            # 9.16 — Disabled item Enter does NOT trigger download.
+            triggered_box = {"triggered": False}
+            def _on_download(d):
+                triggered_box["triggered"] = True
+            page.once("download", _on_download)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(400)
+            record("09.synth.disabled_enter_does_not_export",
+                   triggered_box["triggered"] is False)
+
+            # 9.17 — Escape closes menu and restores focus to trigger.
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+            record("09.escape.menu_hidden",
+                   menu.get_attribute("hidden") is not None)
+            record("09.escape.aria_expanded_false",
+                   trigger.get_attribute("aria-expanded") == "false")
+            record("09.escape.focus_on_trigger",
+                   page.evaluate("() => document.activeElement.id") ==
+                   "btnExportMenu")
+
+            # 9.18 — Reload fixture so CSV/XLSX become enabled again.
+            # Clear filePicker first so set_input_files refires change
+            # when the same file is selected.
+            page.locator("#filePicker").set_input_files([])
+            page.wait_for_timeout(150)
+            page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+            page.wait_for_timeout(2500)
+
+            # 9.19 — Click outside closes the menu. Use page.mouse.click
+            # on a coordinate clearly outside both the trigger and the
+            # menu (lower portion of viewport).
+            trigger.click()
+            page.wait_for_timeout(200)
+            record("09.outside.menu_open_before",
+                   menu.get_attribute("hidden") is None)
+            page.mouse.click(700, 700)
+            page.wait_for_timeout(200)
+            record("09.outside.menu_closed_after",
+                   menu.get_attribute("hidden") is not None)
+
+            # 9.20 — Click trigger again to close (toggle behaviour).
+            trigger.click()
+            page.wait_for_timeout(200)
+            record("09.toggle.opens_again",
+                   menu.get_attribute("hidden") is None)
+            trigger.click()
+            page.wait_for_timeout(200)
+            record("09.toggle.closes_on_second_click",
+                   menu.get_attribute("hidden") is not None)
+
+            # 9.21 — Enter on enabled item triggers the corresponding export.
+            trigger.click()
+            page.wait_for_timeout(200)
+            with page.expect_download(timeout=15000) as dl_info:
+                page.keyboard.press("Enter")
+            dl_md = dl_info.value
+            record("09.activation.enter_triggers_md_export",
+                   dl_md.suggested_filename.lower().endswith(".md"),
+                   "name=" + dl_md.suggested_filename)
+            # Menu should auto-close after activation; focus on trigger.
+            page.wait_for_timeout(200)
+            record("09.activation.menu_closes_after_export",
+                   menu.get_attribute("hidden") is not None)
+            record("09.activation.focus_back_on_trigger",
+                   page.evaluate("() => document.activeElement.id") ==
+                   "btnExportMenu")
+
+            # 9.22 — Click on a menu item via mouse triggers export.
+            trigger.click()
+            page.wait_for_timeout(200)
+            with page.expect_download(timeout=15000) as dl_info:
+                page.locator("#miExportHtml").click()
+            dl_html = dl_info.value
+            record("09.activation.click_triggers_html_export",
+                   dl_html.suggested_filename.lower().endswith(".html"),
+                   "name=" + dl_html.suggested_filename)
+
+            # 9.23 — Dark theme: menu inherits the dark palette
+            # (var(--bg) cascades live).
+            current_theme = page.evaluate(
+                "() => document.documentElement.getAttribute('data-theme')")
+            if current_theme != "dark":
+                page.locator("#btnTheme").click()
+                page.wait_for_timeout(200)
+            trigger.click()
+            page.wait_for_timeout(200)
+            menu_bg = page.evaluate("""
+                () => getComputedStyle(document.getElementById('exportMenu'))
+                       .backgroundColor
+            """)
+            # Dark --bg = #0d1117 = rgb(13, 17, 23)
+            record("09.dark.menu_bg_dark",
+                   menu_bg == "rgb(13, 17, 23)",
+                   "got=" + str(menu_bg))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+            # Back to light theme.
+            page.locator("#btnTheme").click()
+            page.wait_for_timeout(200)
+
+            # 9.24 — Trigger keyboard activation: ArrowDown opens menu.
+            trigger.focus()
+            page.wait_for_timeout(100)
+            page.keyboard.press("ArrowDown")
+            page.wait_for_timeout(200)
+            record("09.kbd.arrow_down_on_trigger_opens",
+                   menu.get_attribute("hidden") is None)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.kbd.arrow_down_focuses_first",
+                   focused_id == "miExportMd",
+                   "focused=%r" % focused_id)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+
+            # 9.25 — Trigger keyboard ArrowUp opens and focuses last.
+            trigger.focus()
+            page.wait_for_timeout(100)
+            page.keyboard.press("ArrowUp")
+            page.wait_for_timeout(200)
+            record("09.kbd.arrow_up_on_trigger_opens",
+                   menu.get_attribute("hidden") is None)
+            focused_id = page.evaluate("() => document.activeElement.id")
+            record("09.kbd.arrow_up_focuses_last",
+                   focused_id == "miExportXlsx",
+                   "focused=%r" % focused_id)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+
+            # 9.26 — RTL: menu alignment uses inset-inline-start (= right
+            # edge of trigger). With dir="rtl", the menu's RIGHT edge
+            # should align with the trigger's RIGHT edge.
+            page.evaluate(
+                "() => document.documentElement.setAttribute('dir', 'rtl')")
+            page.wait_for_timeout(200)
+            trigger.click()
+            page.wait_for_timeout(200)
+            geom = page.evaluate("""
+                () => {
+                  const t = document.getElementById('btnExportMenu').getBoundingClientRect();
+                  const m = document.getElementById('exportMenu').getBoundingClientRect();
+                  return {tRight: t.right, mRight: m.right,
+                          tLeft: t.left, mLeft: m.left};
+                }
+            """)
+            # In RTL, m.right should ~ equal t.right (within a few px).
+            rtl_aligned = abs(geom["mRight"] - geom["tRight"]) < 5
+            record("09.rtl.menu_right_aligns_to_trigger_right",
+                   rtl_aligned,
+                   "tRight=%.1f mRight=%.1f delta=%.1f" %
+                   (geom["tRight"], geom["mRight"],
+                    geom["mRight"] - geom["tRight"]))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+            # Restore LTR for any subsequent context (defensive).
+            page.evaluate(
+                "() => document.documentElement.setAttribute('dir', 'auto')")
+
+            # 9.27 — Trigger remains enabled, returns to no-exporting state.
+            record("09.trigger.no_exporting_attr_after_runs",
+                   trigger.get_attribute("data-exporting") is None)
+            record("09.trigger.enabled_after_runs",
+                   trigger.is_enabled())
+
+        record("09.no_pageerror",
+               len(page_errors) == 0,
+               "errs=" + repr(page_errors[:3]))
         ctx.close()
 
         browser.close()
