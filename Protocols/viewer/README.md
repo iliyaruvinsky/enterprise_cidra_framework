@@ -3,7 +3,7 @@
 A single-file, dependency-free (CDN-loaded) HTML viewer for CIDRA-authored
 Markdown documentation. Implements the rendering contract defined in
 [`Agents/shared/multilingual_rendering_protocol.yaml`](../../Agents/shared/multilingual_rendering_protocol.yaml)
-(MRP) v1.1.0.
+(MRP) v1.2.0.
 
 The viewer exists because GitHub, VS Code preview, and other generic
 Markdown viewers do not consistently handle bilingual (Hebrew + English)
@@ -103,6 +103,93 @@ next file load.
 - **Mermaid SVG** embedded as `<img src="data:image/svg+xml;base64,…">`
   is permitted by the DOMPurify config (via `ALLOWED_URI_REGEXP`, the
   documented v3 mechanism — not the deprecated `ADD_DATA_URI_TAGS`).
+
+---
+
+## Table styling
+
+Tables produced by the viewer (and carried through to `.html` and `.docx`
+exports) follow a uniform GitHub-grade visual: dark slate header, subtle
+zebra body, crisp slate borders, comfortable 8x14 padding.
+
+### Philosophy
+
+One source of truth, three export targets. The viewer's CSS variables
+`--tbl-header-bg`, `--tbl-row-even`, `--tbl-border`, etc. drive on-screen
+rendering AND propagate into the exports via two different mechanisms:
+
+| Surface | CSS mechanism | Zebra mechanism | Theme |
+|---------|---------------|-----------------|-------|
+| Viewer | `var(--tbl-*)` resolving against `:root` or `html[data-theme="dark"]` | `tbody tr:nth-child(odd|even)` | Live light/dark toggle |
+| `.html` export | Full viewer `<style>` block embedded in `<head>` | `nth-child` **AND** pre-baked inline `background:` on every other `<tr>` | Mirrors viewer's active theme; dark block included so DevTools toggle works in the exported file |
+| `.docx` export | Inline `style="..."` on every `<table>`, `<th>`, `<td>`, `<tr>` with literal hex resolved at export time | Pre-baked inline `background:` only (Word ignores `:nth-child` reliably) | **Always light** — see below |
+
+### Light-theme color values used in DOCX
+
+The DOCX export rewriter resolves all `var(--tbl-*)` to these literals
+before serialization. They mirror the viewer's `:root` block exactly.
+
+| Token | Value | Used for |
+|-------|-------|----------|
+| `--tbl-border-outer` | `#a0aec0` | Frame border (cells only — table-level border dropped to avoid Word's double-frame quirk) |
+| `--tbl-border` | `#cbd5e0` | Inner cell borders |
+| `--tbl-header-bg` | `#2d3748` | Header row background (slate-700) |
+| `--tbl-header-fg` | `#ffffff` | Header row text |
+| `--tbl-row-odd` | `#ffffff` | Odd body rows |
+| `--tbl-row-even` | `#f7fafc` | Even body rows (slate-50, zebra) |
+| `--tbl-cell-fg` | `#1a202c` | Body cell text (slate-900) |
+| `--tbl-code-bg` | `#edf2f7` | Inline `<code>` chip background |
+| `--tbl-code-fg` | `#1a202c` | Inline `<code>` chip text |
+
+### Why DOCX always bakes light theme
+
+1. **Word lacks theme awareness.** Word documents do not have a
+   `data-theme` attribute or a "dark mode" rendering pipeline.
+   Recipients see whatever colors are inlined.
+2. **Recipients typically print or share.** Light backgrounds match
+   printer paper and Maccabi's corporate template defaults.
+3. **Eliminates a class of theme-leakage bugs.** The `buildHtmlDocument`
+   call with `{forLightTheme: true}` strips the
+   `html[data-theme="dark"]` CSS rule from the embedded `<style>` AND
+   forces `data-theme="light"` on the root `<html>`. Any non-inlined
+   `var()` therefore resolves against `:root` light values, never
+   stale dark values left behind by the rewriter.
+
+### `.md` exports remain unstyled
+
+Table styling is a **rendering-time** concern. The source markdown
+returned by `Export .md` is the raw pipe-table syntax with no inline
+HTML. Styling is re-applied automatically on the next render in any
+viewer that opens the file.
+
+### Known browser / Word differences
+
+| Engine | Behavior | Mitigation |
+|--------|----------|------------|
+| Modern browsers (Chrome 49+, Firefox 31+, Safari 9.1+) | `var()`, `:nth-child`, `:where()`, `:has()` all work natively | None needed — viewer + `.html` export render correctly |
+| Word 2016/2019/2021 desktop | Ignores CSS Custom Properties; `:nth-child` unreliable; treats logical padding (`padding-inline`) as unknown | DOCX rewriter pre-bakes literal hex values + pre-bakes zebra inline + emits only physical padding shorthand |
+| Word for the Web | Mostly matches desktop; `:nth-child` slightly more reliable | Inline pre-bake is defensive but doesn't hurt |
+| Outlook (style-stripping email clients) | Strips `<style>` blocks; preserves inline `style` attributes | `.html` export ALSO pre-bakes zebra inline so the table reads correctly when pasted into email |
+| LibreOffice Writer | Honors `border-collapse:collapse` correctly; `background-clip:padding-box` respected | None — same DOCX output works |
+| Apple Pages (via `.docx` import) | Tolerates inline styles; `background-clip` respected | None — same DOCX output works |
+| `:has()` (Firefox ESR <121) | Cell-level `code-only` detection via `:has()` is unavailable | Renderer's structural detection tags `class="code-only"` — viewer works without `:has()` |
+
+### Limitations
+
+- **Header row repetition across page breaks** in DOCX is not
+  enabled. `html-docx-js` does not emit `<w:tblHeader/>` — reviewers
+  must turn on "Repeat as header row at the top of each page" in
+  Word's Table Properties dialog manually.
+- **Very wide tables (>10 columns)** may exceed page margins in
+  Word. Future enhancement: detect overwide tables in the rewriter
+  and emit `colgroup` widths with `table-layout:fixed`.
+- **Nested tables** are passed through but may flatten in older Word
+  versions (Word 2016/2019). The rewriter applies `width:auto` and
+  skips zebra on inner tables to mitigate visual conflicts; for
+  reliable nested-table rendering, use the `.html` export.
+- **Merged cells (`rowspan`/`colspan` >1)** carry a neutral white
+  background instead of the row zebra, so the merged cell reads
+  consistently across all visual rows it spans.
 
 ---
 
@@ -399,6 +486,7 @@ documentation. Wire-in points:
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.4.0 | 2026-06-01 | Table styling overhaul (MRP v1.2.0): GitHub-grade visual look with dark slate-700 header, subtle slate-50 zebra body, slate-300/400 borders, 8x14 padding. New `--tbl-*` CSS variables driving all three surfaces (viewer / `.html` / `.docx`); `prepareCloneForDocxExport` extended with `inlineTableStylesForDocx` that resolves every var() to a literal hex (Word cannot read `var()`). `.docx` always bakes the light theme (`buildHtmlDocument({forLightTheme:true})` strips the dark-theme block AND forces `data-theme="light"`). Critical+high adversarial fixes folded in: dark-theme code-chip contrast lift, `background-clip:padding-box` to prevent Word/LibreOffice padding divergence, merged-cell zebra neutralization, nested-table double-paint prevention, RTL-text-align specificity raised above `text-align:start`, `unicode-bidi:isolate-override` on code-only cells to defeat Hebrew-in-code re-flipping, dropped table-level border to avoid Word's double-frame quirk, deduplicating `appendInlineStyle`. Playwright Scenario 7 with 31 assertions (viewer light + dark + RTL, HTML export style block + pre-baked zebra, DOCX literal hex + no var() + no dark theme leak). |
 | 1.3.0 | 2026-06-01 | Export pipeline added: `Export .md` / `Export .html` / `Export .docx`. SRI-pinned `html-docx-js` v0.3.1 with `./vendor/html-docx.min.js` fallback. Critical+high adversarial fixes folded in: `State.isExporting` double-click guard, NFC + reserved-char + 120-UTF16 filename sanitization with Hebrew preservation, empty-document gating, large-document (>5MB) warning, `<bdi>` content wrapped in U+2068/U+2069 isolates before DOCX serialization, inline `direction:rtl` style on every `dir=rtl` block (Word honors inline CSS where it ignores the `dir` attribute), inline SVG → `data:image/svg+xml` substitution for Mermaid (with visible fallback marker), Theme button disabled during export (mid-export race), `Render anyway` content propagation confirm dialog, toast confirmation, Dir button label synced to live `html[dir]` on boot, Playwright suite extended with Scenarios 5 (all-buttons-respond) + 6 (round-trip exports), 51 new assertions. |
 | 1.2.0 | 2026-05-31 | Resilience redesign: SRI hashes on every CDN URL, defer + capture-phase error listener, per-library failure registry, `./vendor/` fallback for `marked` / `dompurify` / `highlight.js`, structured Banner DOM (no innerHTML), per-file `Render anyway` opt-in (scoped to current file, cleared on every load), 8s boot watchdog, CSP meta tag, DOMPurify `afterSanitizeAttributes` hook stripping `javascript:`/`data:` on `<a href>` and `<iframe src>`, footer `dir="ltr"` (UAX#9 N1 trailing-period fix), toolbar `dir="ltr" lang="en"`, banner host `dir="ltr"` + sticky, bilingual banner messages (en + he), title `lang="en" dir="ltr"`. |
 | 1.1.0 | 2026-05-31 | Critical+high adversarial fixes folded in: pinned marked to v5 (positional API), browser-bundle highlight.js, valid stub grammars, autolink disabled, BOM detection, front-matter parsing, blockquote dir fix, ul/ol re-declaration, DOMPurify v3 `ALLOWED_URI_REGEXP`, structural tablecell detection, Hebrew mono fallbacks, inline-style empty state removed. |

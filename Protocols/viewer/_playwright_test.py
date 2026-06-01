@@ -478,6 +478,315 @@ def main():
                             full_page=True)
         ctx.close()
 
+        # ====================================================================
+        # Scenario 7 — Table styling (v1.2.0)
+        # Verifies the new themed/bordered/zebra-striped table look in the
+        # viewer (light + dark), HTML export (style block present + zebra
+        # pre-baked), and DOCX export (literal hex inline, no var(),
+        # always light theme).
+        # ====================================================================
+        ctx = browser.new_context(
+            viewport={"width": 1400, "height": 900},
+            accept_downloads=True,
+        )
+        page = ctx.new_page()
+        page_errors = []
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
+        page.goto(VIEWER)
+        page.wait_for_load_state("networkidle", timeout=30000)
+
+        if not FIXTURE_MD.exists():
+            record("07.fixture.exists", False,
+                   "skipping table styling scenario; fixture missing")
+        else:
+            page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+            page.wait_for_timeout(2500)
+
+            # Verify a table actually rendered from the fixture.
+            n_tables = page.locator("#output table").count()
+            record("07.viewer.table_present",
+                   n_tables > 0, "n=%d" % n_tables)
+
+            # ---- 7.1 Light theme header background = slate-700 -----
+            header_bg = page.evaluate("""
+                () => {
+                  const th = document.querySelector(
+                    '#output table thead th, #output table tr:first-child th');
+                  return th ? getComputedStyle(th).backgroundColor : null;
+                }
+            """)
+            # #2d3748 → rgb(45, 55, 72)
+            record("07.viewer.header_bg=slate700",
+                   header_bg == "rgb(45, 55, 72)",
+                   "got=" + str(header_bg))
+
+            # ---- 7.2 Light theme header text = white ----
+            header_fg = page.evaluate("""
+                () => {
+                  const th = document.querySelector(
+                    '#output table thead th, #output table tr:first-child th');
+                  return th ? getComputedStyle(th).color : null;
+                }
+            """)
+            record("07.viewer.header_fg=white",
+                   header_fg == "rgb(255, 255, 255)",
+                   "got=" + str(header_fg))
+
+            # ---- 7.3 Header font-weight = 700 ----
+            header_fw = page.evaluate("""
+                () => {
+                  const th = document.querySelector(
+                    '#output table thead th, #output table tr:first-child th');
+                  return th ? getComputedStyle(th).fontWeight : null;
+                }
+            """)
+            record("07.viewer.header_fw=700",
+                   str(header_fw) == "700",
+                   "got=" + str(header_fw))
+
+            # ---- 7.4 Zebra striping — odd vs even differ ----
+            zebra = page.evaluate("""
+                () => {
+                  const odd = document.querySelector(
+                    '#output table tbody tr:nth-child(odd)');
+                  const even = document.querySelector(
+                    '#output table tbody tr:nth-child(even)');
+                  return {
+                    odd: odd ? getComputedStyle(odd).backgroundColor : null,
+                    even: even ? getComputedStyle(even).backgroundColor : null,
+                  };
+                }
+            """)
+            record("07.viewer.zebra.odd=white",
+                   zebra["odd"] == "rgb(255, 255, 255)",
+                   "got=" + str(zebra["odd"]))
+            record("07.viewer.zebra.even=slate50",
+                   zebra["even"] == "rgb(247, 250, 252)",
+                   "got=" + str(zebra["even"]))
+            record("07.viewer.zebra.differs",
+                   zebra["odd"] != zebra["even"],
+                   "odd=%s even=%s" % (zebra["odd"], zebra["even"]))
+
+            # ---- 7.5 Body cell border color matches token ----
+            cell_border = page.evaluate("""
+                () => {
+                  const td = document.querySelector('#output table tbody td');
+                  return td ? getComputedStyle(td).borderTopColor : null;
+                }
+            """)
+            # #cbd5e0 → rgb(203, 213, 224)
+            record("07.viewer.cell_border=slate300",
+                   cell_border == "rgb(203, 213, 224)",
+                   "got=" + str(cell_border))
+
+            # ---- 7.6 Light theme screenshot ----
+            # Scroll first table into view for a clean shot.
+            page.evaluate("""
+                () => {
+                  const t = document.querySelector('#output table');
+                  if (t) t.scrollIntoView({block:'center'});
+                }
+            """)
+            page.wait_for_timeout(200)
+            page.screenshot(
+                path=str(OUTPUT / "07_table_styling_light.png"),
+                full_page=False)
+            record("07.screenshot.light_saved",
+                   (OUTPUT / "07_table_styling_light.png").exists())
+
+            # ---- 7.7 Dark theme switch ----
+            page.locator("#btnTheme").click()
+            page.wait_for_timeout(200)
+            dark_theme = page.evaluate(
+                "() => document.documentElement.getAttribute('data-theme')")
+            record("07.viewer.theme_is_dark",
+                   dark_theme == "dark",
+                   "got=" + str(dark_theme))
+
+            dark_header_bg = page.evaluate("""
+                () => {
+                  const th = document.querySelector(
+                    '#output table thead th, #output table tr:first-child th');
+                  return th ? getComputedStyle(th).backgroundColor : null;
+                }
+            """)
+            # #111827 → rgb(17, 24, 39)
+            record("07.viewer.dark_header_bg=gray900",
+                   dark_header_bg == "rgb(17, 24, 39)",
+                   "got=" + str(dark_header_bg))
+
+            dark_even_bg = page.evaluate("""
+                () => {
+                  const r = document.querySelector(
+                    '#output table tbody tr:nth-child(even)');
+                  return r ? getComputedStyle(r).backgroundColor : null;
+                }
+            """)
+            # #161b22 → rgb(22, 27, 34)
+            record("07.viewer.dark_even_bg=gray850",
+                   dark_even_bg == "rgb(22, 27, 34)",
+                   "got=" + str(dark_even_bg))
+
+            # ---- Dark theme screenshot ----
+            page.evaluate("""
+                () => {
+                  const t = document.querySelector('#output table');
+                  if (t) t.scrollIntoView({block:'center'});
+                }
+            """)
+            page.wait_for_timeout(200)
+            page.screenshot(
+                path=str(OUTPUT / "07_table_styling_dark.png"),
+                full_page=False)
+            record("07.screenshot.dark_saved",
+                   (OUTPUT / "07_table_styling_dark.png").exists())
+
+            # Back to light theme for the rest of the scenario.
+            page.locator("#btnTheme").click()
+            page.wait_for_timeout(200)
+
+            # ---- 7.8 RTL preserves zebra, flips text-align ----
+            # The fixture is Hebrew so the table is RTL already.
+            rtl_check = page.evaluate("""
+                () => {
+                  const td = document.querySelector(
+                    '#output table tbody td:not(.code-only)');
+                  return td ? {
+                    align: getComputedStyle(td).textAlign,
+                    dir: getComputedStyle(td).direction,
+                  } : null;
+                }
+            """)
+            html_dir = page.evaluate(
+                "() => document.documentElement.getAttribute('dir')")
+            # The RK1 fixture ships dir=rtl via front-matter; if Auto, the
+            # cell may still resolve via :where()(html[dir=rtl]).
+            if html_dir == "rtl":
+                record("07.viewer.rtl.cell_align_right",
+                       rtl_check and rtl_check["align"] == "right",
+                       "got=" + repr(rtl_check))
+            else:
+                record("07.viewer.rtl.cell_align_recorded",
+                       rtl_check is not None,
+                       "html_dir=%s rtl_check=%r" % (html_dir, rtl_check))
+
+            # Zebra must still differ under RTL.
+            rtl_zebra = page.evaluate("""
+                () => {
+                  const odd = document.querySelector(
+                    '#output table tbody tr:nth-child(odd)');
+                  const even = document.querySelector(
+                    '#output table tbody tr:nth-child(even)');
+                  return {
+                    odd: odd ? getComputedStyle(odd).backgroundColor : null,
+                    even: even ? getComputedStyle(even).backgroundColor : null,
+                  };
+                }
+            """)
+            record("07.viewer.rtl.zebra_preserved",
+                   rtl_zebra["odd"] != rtl_zebra["even"],
+                   "odd=%s even=%s" % (rtl_zebra["odd"], rtl_zebra["even"]))
+
+            # ---- 7.9 HTML export embeds the table CSS rules ----
+            with page.expect_download(timeout=15000) as dl_info:
+                page.locator("#btnExportHtml").click()
+            dl_html = dl_info.value
+            html_path = DOWNLOADS / dl_html.suggested_filename
+            dl_html.save_as(str(html_path))
+            html_text = html_path.read_text(encoding="utf-8")
+            record("07.html.has_thead_th_rule",
+                   ".md thead th" in html_text,
+                   "size=%d" % len(html_text))
+            record("07.html.has_tbl_header_bg_var",
+                   "--tbl-header-bg:" in html_text and "#2d3748" in html_text)
+            record("07.html.has_tbl_row_even_var",
+                   "--tbl-row-even:" in html_text and "#f7fafc" in html_text)
+            record("07.html.has_dark_theme_block",
+                   'html[data-theme="dark"]' in html_text)
+            record("07.html.has_border_collapse",
+                   "border-collapse: collapse" in html_text or
+                   "border-collapse:collapse" in html_text)
+            record("07.html.zebra_prebaked_inline",
+                   "background:#f7fafc" in html_text or
+                   "background: #f7fafc" in html_text)
+
+            # ---- 7.10 DOCX export — literal hex inline, NO var() ----
+            html_docx_loaded = page.evaluate(
+                "() => window.__cidraViewer.deps.htmlDocx()")
+            if html_docx_loaded:
+                with page.expect_download(timeout=30000) as dl_info:
+                    page.locator("#btnExportDocx").click()
+                dl_docx = dl_info.value
+                docx_path = DOWNLOADS / dl_docx.suggested_filename
+                dl_docx.save_as(str(docx_path))
+
+                # Read word/afchunk.mht (or any chunk file) from the zip.
+                mht_text = ""
+                try:
+                    with zipfile.ZipFile(str(docx_path)) as zf:
+                        for n in zf.namelist():
+                            if n.endswith(".mht") or "afchunk" in n.lower():
+                                with zf.open(n) as f:
+                                    mht_text += f.read().decode(
+                                        "utf-8", errors="ignore")
+                except Exception as ex:
+                    record("07.docx.read_mht", False, "err=" + str(ex))
+
+                # 7.10.a — literal header bg + fg inline on at least one <th>
+                record("07.docx.header_bg_literal",
+                       "background:#2d3748" in mht_text,
+                       "size_mht=%d" % len(mht_text))
+                record("07.docx.header_fg_literal",
+                       "color:#ffffff" in mht_text)
+
+                # 7.10.b — literal zebra even bg inline on at least one <tr>
+                record("07.docx.zebra_even_literal",
+                       "background:#f7fafc" in mht_text)
+
+                # 7.10.c — literal cell border on at least one td
+                record("07.docx.cell_border_literal",
+                       "1px solid #cbd5e0" in mht_text)
+
+                # 7.10.d — NO var() anywhere inside <table>...</table>
+                import re as _re
+                tables = _re.findall(
+                    r"<table[\s\S]*?</table>", mht_text)
+                record("07.docx.table_regions_found",
+                       len(tables) > 0,
+                       "n_tables=%d" % len(tables))
+                any_var_in_tables = any("var(" in t for t in tables)
+                record("07.docx.no_var_in_tables",
+                       not any_var_in_tables,
+                       "found=%s" % any_var_in_tables)
+
+                # 7.10.e — no forbidden families inside table markup
+                forbidden = ["calc(", "linear-gradient", "transform:",
+                             "box-shadow:", "display:flex", "display:grid",
+                             "padding-inline"]
+                found_forbidden = []
+                for t in tables:
+                    for frag in forbidden:
+                        if frag in t:
+                            found_forbidden.append(frag)
+                record("07.docx.no_forbidden_in_tables",
+                       len(found_forbidden) == 0,
+                       "found=%r" % found_forbidden)
+
+                # 7.10.f — DOCX always light theme: NO data-theme="dark"
+                record("07.docx.no_dark_theme",
+                       'data-theme="dark"' not in mht_text)
+
+                # 7.10.g — DOCX MHT must NOT contain dark-theme palette
+                # hex values inside table regions (#111827).
+                any_dark_in_tables = any("#111827" in t for t in tables)
+                record("07.docx.no_dark_palette_in_tables",
+                       not any_dark_in_tables)
+
+            record("07.no_pageerror",
+                   len(page_errors) == 0,
+                   "errs=" + repr(page_errors[:3]))
+        ctx.close()
+
         browser.close()
 
     # Summary

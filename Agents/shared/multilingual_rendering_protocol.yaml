@@ -27,7 +27,7 @@
 # =============================================================================
 
 name: "multilingual_rendering_protocol"
-version: "1.1.0"
+version: "1.2.0"
 status: "current"
 description: |
   Deterministic rules for laying out bilingual (RTL + LTR) documentation
@@ -406,6 +406,258 @@ table_conventions:
       .md table .md table { direction:inherit; unicode-bidi:plaintext }),
       not the document direction. Authors prefer to restructure as
       adjacent tables with a heading.
+
+  table_visual_style:
+
+    rationale: |
+      Up to v1.1.0 the protocol specified only directional and semantic
+      behavior of table cells (RTL flipping, code-only LTR exception,
+      nested-table inheritance). It said nothing about visual
+      presentation, which led to viewer and exported .docx documents
+      rendering tables as flat, borderless walls of text — header rows
+      visually indistinguishable from body rows.
+      This subsection mandates the minimum visual contrast required for
+      legibility and the technical constraints that keep the same
+      appearance across the viewer, .html export, and .docx export.
+
+    appearance_requirements:
+      light_theme:
+        header_background:    "#2d3748"   # slate-700
+        header_foreground:    "#ffffff"
+        header_font_weight:   700
+        body_row_odd_bg:      "#ffffff"
+        body_row_even_bg:     "#f7fafc"   # slate-50, zebra
+        cell_foreground:      "#1a202c"
+        border_inner:         "#cbd5e0"   # slate-300, between cells
+        border_outer:         "#a0aec0"   # slate-400, frame
+        cell_padding:         "8px 14px"  # header: 10px 14px
+        inline_code_bg:       "#edf2f7"
+      dark_theme:
+        header_background:    "#111827"   # near-black
+        header_foreground:    "#f9fafb"
+        body_row_odd_bg:      "#0d1117"
+        body_row_even_bg:     "#161b22"
+        cell_foreground:      "#e5e7eb"
+        border_inner:         "#374151"
+        border_outer:         "#4b5563"
+        # Lifted from #1f2937 to #374151 to keep code chips visible
+        # against body_row_even_bg (#161b22). Adversarial finding
+        # "dark contrast collapse" in the original review.
+        inline_code_bg:       "#374151"
+
+    mandatory_css_properties_viewer:
+      # Source of truth: viewer.html section 8.
+      - "border-collapse: collapse"        # required for MHT/Word
+      - "border-spacing: 0"
+      - "width: 100%"                      # tables fill content width
+      - "font-weight: 700 on thead th"     # header must be bold
+      - "zebra striping on tbody tr"       # nth-child(odd|even)
+      - "text-align: start"                # logical — flips under RTL
+
+    mandatory_css_properties_docx_inline:
+      # Source of truth: prepareCloneForDocxExport -> inlineTableStylesForDocx.
+      # Logical properties (padding-inline, padding-block, text-align:start)
+      # are FORBIDDEN here — Word's MHT parser drops them silently. The
+      # rewriter must emit the resolved literal hex + literal padding
+      # shorthand + literal text-align:left/right.
+      - "border-collapse:collapse"
+      - "padding:8px 14px on body cells, 10px 14px on header"
+      - "font-size:14px explicit on every <th>/<td>"
+      - "text-align:left or text-align:right (resolved, NOT 'start')"
+      - "background-clip:padding-box on every cell"
+      - "background:<literal hex> on every <tr> for zebra"
+
+    forbidden_in_exports:
+      - "CSS Custom Properties (var(--x)) inside table inline styles in
+        DOCX export — html-docx-js drops the entire declaration. The
+        export rewriter MUST resolve every var() to a literal hex value
+        before serializing the MHT."
+      - "::before / ::after pseudo-elements for visual borders — Word's
+        MHT engine ignores them entirely."
+      - "background-image, linear-gradient — drop silently in DOCX."
+      - "transform, box-shadow, filter, backdrop-filter — ignored by Word."
+      - "calc() in any table-related property — Word's parser treats
+        calc() as an unknown function and drops it."
+      - "flex / grid on table descendants — collapses layout."
+      - ":nth-child as the SOLE zebra mechanism for DOCX — unreliable
+        across Word versions. Pre-bake the stripe as inline
+        style=\"background:<hex>;\" on every other <tr> during export.
+        (Viewer + .html export may keep nth-child.)"
+      - "padding-inline / padding-block on DOCX inline styles — Word
+        ignores logical padding properties; use shorthand only."
+      - "unitless line-height on DOCX inline styles — html-docx-js
+        translates unitless line-height to <w:line w:val=N w:lineRule
+        =exact>, which crushes cells. Omit line-height or use px."
+      - "border-radius on DOCX inline styles — Word Mobile renders
+        border-radius as a 3px margin which breaks Hebrew RTL line
+        layout. Viewer-only property."
+
+    rtl_handling:
+      text_align:
+        rule: |
+          Use text-align: start in the viewer CSS so logical alignment
+          flips automatically. For DOCX export, the rewriter MUST also
+          emit a literal text-align:right (when dir=rtl) or
+          text-align:left (when dir=ltr) on every <th> and <td>, because
+          Word's MHT engine does NOT resolve the logical "start" keyword.
+      padding:
+        rule: |
+          DOCX rewriter emits the shorthand "padding:8px 14px" which
+          Word reads correctly under both directions. Symmetric padding
+          has nothing to flip; logical padding-inline is forbidden in
+          DOCX inline styles.
+      code_only_cells:
+        rule: |
+          A cell carrying class="code-only" overrides the surrounding
+          direction: direction:ltr and text-align:left are inlined
+          regardless of the table's resolved direction. The cell also
+          carries unicode-bidi:isolate-override so Hebrew characters
+          embedded in code identifiers don't re-flip the cell.
+
+    docx_theme_contract:
+      rule: |
+        The DOCX export ALWAYS bakes the light theme regardless of the
+        viewer's current data-theme. Rationale:
+          1. Word lacks theme awareness — there is no document-level
+             "render as dark" mode that recipients can flip.
+          2. Recipients typically print or share the .docx; light
+             backgrounds match printer paper and corporate templates.
+          3. Eliminates a class of theme-leakage bugs where any
+             non-inlined var() resolves against stale dark-theme values
+             that the rewriter missed.
+      enforcement: |
+        buildHtmlDocument(clone, {forLightTheme: true}) strips the
+        html[data-theme="dark"] CSS block from the embedded <style>
+        AND forces data-theme="light" on the cloned root <html>.
+
+    export_pipeline_contract:
+      viewer:
+        css_source: "viewer.html section 8 (CSS variables + theme switch)"
+        zebra_mechanism: "tbody tr:nth-child(even)"
+        theme_switch:    "html[data-theme=\"dark\"] overrides"
+      html_export:
+        css_source: "Full viewer <style> block embedded in <head>"
+        zebra_mechanism: "nth-child AND pre-baked inline background on <tr>"
+        theme_switch:    "Preserved — opens with viewer's active theme"
+      docx_export:
+        css_source: "Inline style attributes on every table/thead/tr/th/td/code"
+        zebra_mechanism: "Pre-baked inline background on each <tr>"
+        theme_switch:    "None — always renders light-theme literals"
+        literal_palette: "See appearance_requirements.light_theme above"
+        limitations:
+          - "Nested tables: Word flattens >2-deep nesting via altChunk
+            import. Rewriter applies width:auto and skips zebra on
+            inner tables to mitigate visual conflicts; complex nesting
+            still degrades — prefer HTML export."
+          - "Header row repetition across page breaks: html-docx-js does
+            NOT emit <w:tblHeader/>, so reviewers must enable it
+            manually in Word."
+          - "Very-wide tables (>10 columns): may exceed page margins.
+            Future enhancement: emit colgroup widths and reduce font-
+            size to 12px on overwide tables."
+
+    validation_rules:
+      - rule_id: TABLE_VIS_001
+        description: |
+          Viewer <style> block declares all --tbl-* tokens under :root
+          and under html[data-theme="dark"].
+        check: |
+          Grep viewer.html for '--tbl-border', '--tbl-header-bg',
+          '--tbl-row-even' in BOTH :root and [data-theme="dark"]
+          contexts. Fail if missing from either.
+      - rule_id: TABLE_VIS_002
+        description: |
+          Exported .docx MHT contains NO var() in any table-related
+          inline style.
+        check: |
+          Open word/afchunk.mht. Within <table>...</table> markup, grep
+          for 'var('. Must return zero matches.
+      - rule_id: TABLE_VIS_003
+        description: |
+          Exported .docx has inline background on every other <tr>
+          matching the row-even literal hex. Skipped for header-only
+          tables (zero body rows).
+        check: |
+          Parse afchunk.mht. For each <tbody> with ≥2 rows, every second
+          row must carry style="...background:#f7fafc...".
+      - rule_id: TABLE_VIS_004
+        description: |
+          Exported .docx <thead th> (or first-row <th> in tables with
+          no <thead> wrapper) carries inline background:#2d3748 and
+          color:#ffffff.
+        check: |
+          Parse afchunk.mht. Every <th> inside <thead> (or in the first
+          <tr> when no <thead> exists) must carry both
+          'background:#2d3748' and 'color:#ffffff'.
+      - rule_id: TABLE_VIS_005
+        description: |
+          Exported .html carries the full table CSS block AND pre-baked
+          zebra inline backgrounds on body rows.
+        check: |
+          Grep the exported .html for '.md thead th' (rule present) AND
+          for at least one <tr ... style="...background:#f7fafc...">
+          inside <tbody>.
+      - rule_id: TABLE_VIS_006
+        description: |
+          Code-only cells in RTL tables render LTR.
+        check: |
+          In a Hebrew-primary export, locate any <td class="code-only">.
+          Its inline style (DOCX) must contain 'direction:ltr' and
+          'text-align:left'. Its CSS rule (viewer/.html) must resolve
+          to the same.
+      - rule_id: TABLE_VIS_007
+        description: |
+          Merged cells (rowspan>1 or colspan>1) carry a neutral white
+          background in DOCX export — NOT the row's zebra color.
+        check: |
+          Parse afchunk.mht. For every <td rowspan="N"> with N>1 or
+          <td colspan="N"> with N>1, the inline background must equal
+          '#ffffff', not '#f7fafc'.
+      - rule_id: TABLE_VIS_008
+        description: |
+          DOCX export does NOT emit a table-level border (avoids
+          double-frame quirk in Word's HTML importer).
+        check: |
+          Parse afchunk.mht. Every <table> inline style must NOT contain
+          'border:1px solid #a0aec0'. The frame is carried by cell
+          borders only.
+      - rule_id: TABLE_VIS_009
+        description: |
+          DOCX MHT contains no @supports block inside table-related
+          CSS (Word 2016 has a parser bug where unrecognized @supports
+          consumes the following rule).
+        check: |
+          Grep afchunk.mht for '@supports'. Acceptable only outside
+          table CSS rules; tables in the embedded <style> must not
+          rely on @supports.
+      - rule_id: TABLE_VIS_010
+        description: |
+          DOCX MHT does NOT contain data-theme="dark" or any of the
+          dark-theme palette literals (#111827, #161b22, etc.).
+        check: |
+          Parse afchunk.mht. Must NOT contain 'data-theme="dark"' OR
+          '#111827' OR '--tbl-header-bg:       #111827'.
+
+    forbidden_inline_styles_on_tables:
+      # These tokens MUST NOT appear in the inline style of any table
+      # element produced by the DOCX export rewriter.
+      - "var("                 # CSS variable usage
+      - "calc("                # calc expressions
+      - "linear-gradient"
+      - "radial-gradient"
+      - "url("                 # background-image references
+      - "transform:"
+      - "box-shadow:"
+      - "filter:"
+      - "backdrop-filter:"
+      - "display:flex"
+      - "display:grid"
+      - "display:inline-flex"
+      - "display:inline-grid"
+      - "padding-inline"
+      - "padding-block"
+      - "border-radius"        # Word Mobile RTL bug
+      - "line-height:1"        # unitless line-height crushes cells
 
 # -----------------------------------------------------------------------------
 # LIST CONVENTIONS
@@ -1183,6 +1435,29 @@ version_history:
       RTL; em-dash separators in bilingual headings rendered
       ambiguously. The protocol unifies handling so every CIDRA
       bilingual artifact renders identically across viewers.
+
+  - version: "1.2.0"
+    date: "2026-06-01"
+    changes:
+      - "table_conventions.table_visual_style: new subsection mandating GitHub-grade visual contrast (dark slate-700 header on slate-50/white zebra body, slate-400/300 frame/cell borders, 8x14 padding) with explicit light- and dark-theme palettes"
+      - "Validation rules TABLE_VIS_001 — TABLE_VIS_010 covering CSS variable declaration parity, var()-free DOCX inline styles, pre-baked zebra, header fill, merged-cell neutralization, no table-level border, no @supports in DOCX, no dark-theme leakage"
+      - "Forbidden inline styles on tables extended: var(), calc(), gradients, transform, box-shadow, flex/grid, padding-inline/-block (Word drops), border-radius (Word Mobile bug), unitless line-height (html-docx-js exact-twips bug)"
+      - "DOCX theme contract: light theme is ALWAYS baked into DOCX exports regardless of viewer state (Word lacks theme awareness; recipients typically print/share)"
+      - "Dark-theme --tbl-code-bg lifted from #1f2937 to #374151 to defeat the contrast collapse against --tbl-row-even #161b22 surfaced in adversarial review"
+      - "Mandatory CSS properties split into viewer (logical) and DOCX-inline (resolved literal) lists — Word ignores padding-inline and text-align:start, so logical properties are forbidden in DOCX inline styles"
+    motivation: |
+      Tables produced by the viewer up through v1.1.0 were technically
+      correct (direction, zebra-via-nth-child, code-only override) but
+      visually flat — header rows blended into body rows, borders were
+      light-gray and easy to miss, and DOCX exports lost even that
+      because html-docx-js drops CSS Custom Properties. Adversarial
+      review across three lenses (table-edge-cases, docx-rendering-
+      quirks, rtl-and-theme-interactions) surfaced critical/high gaps:
+      DOCX theme leakage when var() resolved against stale dark
+      values; em-based font sizing dropped by Word; padding-inline
+      ignored; merged-cell zebra bands; nested-table double-painting;
+      dark-theme contrast collapse on inline code chips. v1.2.0 folds
+      all critical+high findings into the protocol AND into the viewer.
 
   - version: "1.1.0"
     date: "2026-05-31"

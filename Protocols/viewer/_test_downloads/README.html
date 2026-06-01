@@ -1,4 +1,4 @@
-<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>README</title><style>
+<!doctype html><html lang="he" dir="rtl" data-theme="light"><head><meta charset="utf-8"><title>README</title><style>
 /* ---------------------------------------------------------------------------
    1. THEME VARIABLES
    --------------------------------------------------------------------------- */
@@ -16,6 +16,23 @@
   --badge-fg: #4338ca;
   --warn-bg: #fef3c7;
   --warn-fg: #92400e;
+
+  /* ---- 8.0 Table tokens (light theme) -------------------------------
+     Referenced by the viewer CSS via var(). The DOCX export rewriter
+     resolves them to literal hex BEFORE serialization so html-docx-js
+     never sees a var() inside table markup (see TABLE_LITERALS in the
+     boot script). Light-theme values are the single source of truth
+     for .docx output (adversarial finding "DOCX theme leakage" — we
+     force-strip data-theme=dark and the dark block before export). */
+  --tbl-border:          #cbd5e0;  /* inner cell border, slate-300 */
+  --tbl-border-outer:    #a0aec0;  /* outer table frame, slate-400 */
+  --tbl-header-bg:       #2d3748;  /* slate-700, dark header fill */
+  --tbl-header-fg:       #ffffff;  /* header text */
+  --tbl-row-odd:         #ffffff;  /* odd body rows */
+  --tbl-row-even:        #f7fafc;  /* even body rows, slate-50 */
+  --tbl-cell-fg:         #1a202c;  /* body text, slate-900 */
+  --tbl-code-bg:         #edf2f7;  /* inline-code chip in cells */
+  --tbl-code-fg:         #1a202c;  /* inline-code text in cells */
 
   /* Mono stack — Hebrew fallbacks BEFORE generic monospace so Hebrew
      comments inside code blocks render with matching x-height. */
@@ -43,6 +60,19 @@ html[data-theme="dark"] {
   --badge-fg: #93c5fd;
   --warn-bg: #422006;
   --warn-fg: #fbbf24;
+
+  /* Table tokens — dark theme. Per the adversarial review, --tbl-code-bg
+     was lifted from #1f2937 to #374151 so inline-code chips remain
+     visually distinguishable against --tbl-row-even (#161b22). */
+  --tbl-border:          #374151;  /* gray-700 */
+  --tbl-border-outer:    #4b5563;  /* gray-600 */
+  --tbl-header-bg:       #111827;  /* gray-900, near-black header */
+  --tbl-header-fg:       #f9fafb;  /* gray-50 */
+  --tbl-row-odd:         #0d1117;  /* matches --bg */
+  --tbl-row-even:        #161b22;  /* matches --code-bg */
+  --tbl-cell-fg:         #e5e7eb;  /* gray-200 */
+  --tbl-code-bg:         #374151;  /* gray-700 — lifted for contrast */
+  --tbl-code-fg:         #e5e7eb;
 }
 
 /* ---------------------------------------------------------------------------
@@ -264,41 +294,94 @@ body {
 
 /* ---------------------------------------------------------------------------
    8. TABLES
-   Direction follows html[dir]; nested tables inherit from their cell.
+   Goal: GitHub-grade visual table with a distinct dark header, subtle
+   zebra body, crisp borders, and full RTL parity.
+   Constraints: every property here MUST survive html-docx-js when CSS
+   variables are resolved to literal hex by the export rewriter
+   (no var() in DOCX, no calc(), no pseudo-elements, no grid).
+   Adversarial fixes folded in:
+     - dark-theme --tbl-code-bg lifted to #374151 for contrast vs row-even
+     - text-align logic uses :where() so per-table dir overrides win
+     - logical padding NOT used (Word ignores padding-inline); literal
+       shorthand only — symmetric padding has nothing to flip
+     - DOCX export forces light theme (see prepareCloneForDocxExport)
    --------------------------------------------------------------------------- */
+
+/* ---- 8.1 Table frame ---------------------------------------- */
 .md table {
-  border-collapse: collapse;
-  margin: 1em 0;
+  border-collapse: collapse;            /* required for MHT/Word */
+  border-spacing: 0;
   width: 100%;
-  direction: inherit;
+  margin: 1em 0;
+  direction: inherit;                   /* follows document dir */
+  border: 1px solid var(--tbl-border-outer);
+  color: var(--tbl-cell-fg);
+  font-size: 14px;                      /* literal px — em is unreliable in Word */
+  line-height: 1.5;
 }
 html[dir="rtl"] .md table { direction: rtl; }
 html[dir="ltr"] .md table { direction: ltr; }
 
-.md table .md table, .md table table {
+/* Nested tables: direction inheritance only — unicode-bidi plaintext
+   belongs on the cells (per-block rule below), not on the table. */
+.md table .md table,
+.md table table {
   direction: inherit;
-  unicode-bidi: plaintext;
+  margin: 0.25em 0;
+  font-size: 1em;
+  width: auto;                          /* nested tables size to content */
 }
 
-.md th, .md td {
-  border: 1px solid var(--border);
-  padding: 6px 10px;
+/* ---- 8.2 Header row ----------------------------------------- */
+.md thead th,
+.md table > tr:first-child th {
+  background: var(--tbl-header-bg);
+  color: var(--tbl-header-fg);
+  font-weight: 700;
+  font-size: 14px;                      /* explicit — Word loses em on cells */
+  padding: 10px 14px;                   /* literal shorthand, symmetric */
+  text-align: start;                    /* logical — flips automatically */
+  vertical-align: middle;
+  border: 1px solid var(--tbl-border-outer);
+  background-clip: padding-box;         /* keeps bg from bleeding into border */
+}
+
+/* ---- 8.3 Body cells ----------------------------------------- */
+.md tbody td,
+.md tbody th,
+.md td {
+  border: 1px solid var(--tbl-border);
+  padding: 8px 14px;
+  font-size: 14px;
   text-align: start;
   vertical-align: top;
-}
-.md thead th {
-  background: var(--code-bg);
-  font-weight: 600;
+  background-clip: padding-box;
+  overflow-wrap: anywhere;              /* wrap gracefully on long tokens */
+  word-break: normal;
 }
 
-/* Code-only cells — LTR regardless of table direction.
-   Two layers of defense:
-     (a) renderer.tablecell tags structural code-only cells with class
-     (b) :has() fallback for browsers that support it (Chrome 105+,
-         Safari 15.4+, Firefox 121+) */
-.md td.code-only, .md th.code-only {
+/* ---- 8.4 Zebra striping ------------------------------------- */
+/* Viewer uses :nth-child; the DOCX export rewriter pre-bakes inline
+   background on every other <tr> because Word's MHT engine handles
+   :nth-child inconsistently. */
+.md tbody tr:nth-child(odd)  { background: var(--tbl-row-odd); }
+.md tbody tr:nth-child(even) { background: var(--tbl-row-even); }
+
+/* When the table has no <thead>/<tbody> wrappers (some markdown
+   renderers emit only <tr>), the first row is the header — start
+   zebra from the second row. */
+.md table > tr:nth-child(odd):not(:first-child)  { background: var(--tbl-row-even); }
+.md table > tr:nth-child(even):not(:first-child) { background: var(--tbl-row-odd); }
+
+/* ---- 8.5 Code-only cells (multilingual_rendering_protocol) -- */
+/* Always render LTR regardless of surrounding table direction.
+   unicode-bidi:isolate-override defeats the plaintext re-detection
+   that would otherwise flip cells whose code contains Hebrew. */
+.md td.code-only,
+.md th.code-only {
   direction: ltr;
   text-align: left;
+  unicode-bidi: isolate-override;
 }
 @supports (selector(:has(*))) {
   .md td:has(> bdi:only-child > code:only-child),
@@ -306,6 +389,95 @@ html[dir="ltr"] .md table { direction: ltr; }
     direction: ltr;
     text-align: left;
   }
+}
+
+/* ---- 8.6 Inline <code> inside cells ------------------------- */
+/* Direct-child selector only — avoids styling <code> inside <pre>
+   blocks that may be nested in a cell. The visual chip reads
+   distinctly inside cells. */
+.md td > code,
+.md th > code,
+.md td > bdi > code,
+.md th > bdi > code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  background: var(--tbl-code-bg);
+  color: var(--tbl-code-fg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  display: inline-block;                /* constrain chip geometry */
+  line-height: 1.4;
+  /* direction:ltr / unicode-bidi:isolate already applied by the
+     :is(bdi, code) rule in section 3 — do not duplicate */
+}
+
+/* Dark-theme defensive border for inline-code chips inside cells —
+   prevents contrast collapse against --tbl-row-even. */
+html[data-theme="dark"] .md td > code,
+html[data-theme="dark"] .md th > code,
+html[data-theme="dark"] .md td > bdi > code,
+html[data-theme="dark"] .md th > bdi > code {
+  border: 1px solid #4b5563;
+}
+
+/* ---- 8.7 RTL adjustments ------------------------------------ */
+/* Per-table dir attribute MUST override document-level direction.
+   Document-level rule uses html[dir] qualifier (specificity 0,2,2);
+   per-table dir attribute uses table[dir] qualifier and matches the
+   same specificity but appears later in source order — so it wins.
+   We must beat the (0,1,2) `.md tbody td` declaration that carries
+   `text-align: start`, hence the explicit `html[dir]` prefix. */
+html[dir="rtl"] .md thead th,
+html[dir="rtl"] .md tbody td,
+html[dir="rtl"] .md tbody th,
+html[dir="rtl"] .md th,
+html[dir="rtl"] .md td {
+  text-align: right;
+}
+html[dir="ltr"] .md thead th,
+html[dir="ltr"] .md tbody td,
+html[dir="ltr"] .md tbody th,
+html[dir="ltr"] .md th,
+html[dir="ltr"] .md td {
+  text-align: left;
+}
+.md table[dir="rtl"] thead th,
+.md table[dir="rtl"] tbody td,
+.md table[dir="rtl"] tbody th,
+.md table[dir="rtl"] th,
+.md table[dir="rtl"] td {
+  text-align: right;
+}
+.md table[dir="ltr"] thead th,
+.md table[dir="ltr"] tbody td,
+.md table[dir="ltr"] tbody th,
+.md table[dir="ltr"] th,
+.md table[dir="ltr"] td {
+  text-align: left;
+}
+
+/* Code-only cells always LTR regardless of table direction — this
+   selector wins on specificity (0,2,1 with the class). */
+.md td.code-only,
+.md th.code-only {
+  text-align: left !important;
+}
+
+/* ---- 8.8 No-overflow safety on narrow viewports ------------- */
+/* Wrap the entire table in a horizontally scrollable region without
+   changing its visual style. The viewer markup does not currently emit
+   the wrapper; if a future renderer does, this is the styling. */
+.md-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.md-table-wrap > table { margin: 0; }
+
+/* ---- 8.9 Tables in blockquotes -- avoid double-frame ---- */
+.md blockquote table {
+  width: auto;
+  margin-inline-start: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -480,37 +652,37 @@ body{max-width:900px;margin:0 auto;padding:24px;}</style></head><body><div class
 <th>מטרה</th>
 </tr>
 </thead>
-<tbody><tr>
+<tbody><tr style="background:#ffffff">
 <td>01</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="01_PROGRAM_SPECIFICATION.md">01_PROGRAM_SPECIFICATION.md</a></bdi></td>
 <td>מפרט תוכנית, הצהרות FD, ספירות מבנה</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>02</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="02_EXTERNAL_INTERFACE.md">02_EXTERNAL_INTERFACE.md</a></bdi></td>
 <td>פרמטרי כניסה, ממשק חיצוני (backend אצווה — ללא DSPF/PRTF)</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>03</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="03_TECHNICAL_ANALYSIS.md">03_TECHNICAL_ANALYSIS.md</a></bdi></td>
 <td>פירוט טכני של סקציות, תלויות, ודפוסי שמות CA 2E</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>04</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="04_BUSINESS_LOGIC.md">04_BUSINESS_LOGIC.md</a></bdi></td>
 <td>תזרים התוכנית, נגזר מהקוד והמפרט</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>05</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="05_CODE_ARTIFACTS.md">05_CODE_ARTIFACTS.md</a></bdi></td>
 <td>קטעי קוד מרכזיים עם מספרי שורות מדויקים</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>06</td>
 <td>README.md (קובץ זה)</td>
 <td>סקירה וניווט</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>07</td>
 <td><bdi><a rel="noopener noreferrer" target="_blank" href="דוח_אימות_RK1_PHARMACY_JOURNAL.md">דוח_אימות_RK1_PHARMACY_JOURNAL.md</a></bdi></td>
 <td>דוח אימות 100 נקודות</td>
@@ -527,85 +699,85 @@ body{max-width:900px;margin:0 auto;padding:24px;}</style></head><body><div class
 <th>סה"כ</th>
 </tr>
 </thead>
-<tbody><tr>
+<tbody><tr style="background:#ffffff">
 <td>גודל קובץ מקור (בתים)</td>
 <td>2,409,034</td>
 <td>1,485,769</td>
 <td>3,894,803</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>סה"כ שורות</td>
 <td>30,377</td>
 <td>18,587</td>
 <td><strong>48,964</strong></td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>שורות קוד (ללא הערות וריקות)</td>
 <td>30,319</td>
 <td>18,566</td>
 <td><strong>48,885</strong></td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>שורות הערה (<bdi><code>*</code></bdi> במצביע)</td>
 <td>57</td>
 <td>20</td>
 <td>77</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>שורות ריקות</td>
 <td>1</td>
 <td>1</td>
 <td>2</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>הצהרות FD (קבצי דיסק)</td>
 <td>29</td>
 <td>12</td>
 <td>41</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>פריטי רמה־01 ב־DATA DIVISION</td>
 <td>765</td>
 <td>694</td>
 <td><strong>1,459</strong></td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>הוראות COPY</td>
 <td>59</td>
 <td>25</td>
 <td>84</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>SECTIONs ב־PROCEDURE DIVISION</td>
 <td>76</td>
 <td>45</td>
 <td>121</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>פסקאות (paragraphs)</td>
 <td>240</td>
 <td>138</td>
 <td>378</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>הוראות PERFORM</td>
 <td>665</td>
 <td>186</td>
 <td>851</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>הוראות CALL (מופעים)</td>
 <td>109</td>
 <td>89</td>
 <td>198</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td>תוכניות חיצוניות ייחודיות נקראות</td>
 <td>—</td>
 <td>—</td>
 <td>18</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td>מקטעים (chunks) שיוצרו על־ידי CIDRA chunker</td>
 <td>—</td>
 <td>—</td>
@@ -640,47 +812,47 @@ body{max-width:900px;margin:0 auto;padding:24px;}</style></head><body><div class
 <th>תפקיד משוער (לפי דפוס שמות בלבד)</th>
 </tr>
 </thead>
-<tbody><tr>
+<tbody><tr style="background:#ffffff">
 <td class="code-only"><bdi><code>HN0050C040</code></bdi></td>
 <td>קידומת לא־RK; נראה שמדובר בפונקציית שירות תאגידית</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td class="code-only"><bdi><code>NOIEUPR</code></bdi></td>
 <td>דפוס השם תואם כלי שירות לטיפול בשגיאות</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td class="code-only"><bdi><code>RK0041L202</code></bdi></td>
 <td>משפחת RK0041 — נראה קשור לתחום של תוכנית זו</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td class="code-only"><bdi><code>RK0042C769</code></bdi></td>
 <td>משפחת RK0042</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td class="code-only"><bdi><code>RK0042C786</code></bdi></td>
 <td>המזהה תואם את שם קובץ Lines — נראה כי מדובר בהפניה־עצמית או תוכנית באותה משפחה</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td class="code-only"><bdi><code>RK0045C770</code></bdi></td>
 <td>משפחת RK0045</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td><bdi><code>RK2014L334</code></bdi>, <bdi><code>RK2014L335</code></bdi></td>
 <td>משפחת RK2014</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td class="code-only"><bdi><code>RK3500C010</code></bdi></td>
 <td>משפחת RK3500 — נראה ש קשור לקובץ הפרמטרים <bdi><code>RK3502BVL1</code></bdi></td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td><bdi><code>RK4000C990</code></bdi>, <bdi><code>RK4000R001</code></bdi></td>
 <td>משפחת RK4000</td>
 </tr>
-<tr>
+<tr style="background:#f7fafc">
 <td><bdi><code>RK9780C020</code></bdi>, <bdi><code>RK9783C010</code></bdi>, <bdi><code>RK9784C020</code></bdi></td>
 <td>משפחת RK9780/3/4 — דפוס השמות תואם להערות העבריות לגבי 9780/9784 לתהליכי צבירה</td>
 </tr>
-<tr>
+<tr style="background:#ffffff">
 <td><bdi><code>Y2QLVNR</code></bdi>, <bdi><code>Y2RTDAC</code></bdi>, <bdi><code>Y2RTJCR</code></bdi>, <bdi><code>Y2SNMGC</code></bdi></td>
 <td>קידומת Y2 — תוכניות שירות של זמן הריצה של CA 2E</td>
 </tr>
