@@ -997,7 +997,10 @@ if ($canSkip) {
         foreach ($f in $expectedFiles) {
             $rel = $f.FullName.Substring($sourceRoot.Length).TrimStart('\','/')
             $dest = Join-Path $SourceCodeDir $rel
-            $destDir = Split-Path -LiteralPath $dest -Parent
+            # PS 5.1: Split-Path -LiteralPath cannot combine with -Parent / -Leaf
+            # (AmbiguousParameterSet — the -LiteralPath set in 5.1 has no modifier
+            # cousins). .NET path helpers are version-neutral and Unicode-safe.
+            $destDir = [System.IO.Path]::GetDirectoryName($dest)
             if (-not (Test-Path -LiteralPath $destDir)) {
                 New-Item -ItemType Directory -Path $destDir -Force | Out-Null
             }
@@ -1006,7 +1009,8 @@ if ($canSkip) {
 
             # APPEND-rename pass: add -SourceRenameTo as a final suffix when set.
             if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo)) {
-                $leaf = Split-Path -LiteralPath $dest -Leaf
+                # PS 5.1: see Split-Path note above. Use .NET helper.
+                $leaf = [System.IO.Path]::GetFileName($dest)
                 $leafLower = $leaf.ToLowerInvariant()
                 $suffixLower = $SourceRenameTo.ToLowerInvariant()
 
@@ -1119,7 +1123,8 @@ if ($ReferenceDocsPath) {
             foreach ($f in $refFiles) {
                 $rel = $f.FullName.Substring($refRoot.Length).TrimStart('\','/')
                 $dest = Join-Path $ReferenceDir $rel
-                $destDir = Split-Path -LiteralPath $dest -Parent
+                # PS 5.1: Split-Path -LiteralPath + -Parent is ambiguous. .NET helper instead.
+                $destDir = [System.IO.Path]::GetDirectoryName($dest)
                 if (-not (Test-Path -LiteralPath $destDir)) {
                     New-Item -ItemType Directory -Path $destDir -Force | Out-Null
                 }
