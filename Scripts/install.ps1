@@ -169,11 +169,11 @@ function Install-Integrations {
         $cursorRulesTarget = Join-Path $TargetPath ".cursorrules"
         if (Test-Path $cursorRulesTarget) {
             # Merge with existing
-            $existingContent = Get-Content $cursorRulesTarget -Raw
+            $existingContent = Get-Content $cursorRulesTarget -Raw -Encoding UTF8
             if (-not $existingContent.Contains("CIDRA")) {
-                $cidraContent = Get-Content $cursorRulesSource -Raw
+                $cidraContent = Get-Content $cursorRulesSource -Raw -Encoding UTF8
                 $mergedContent = $existingContent + "`n`n# CIDRA Integration`n" + $cidraContent
-                Set-Content -Path $cursorRulesTarget -Value $mergedContent
+                Set-Content -Path $cursorRulesTarget -Value $mergedContent -Encoding UTF8
                 Write-Host "    [MERGED] .cursorrules" -ForegroundColor $Green
             } else {
                 Write-Host "    [SKIP] .cursorrules (CIDRA already present)" -ForegroundColor $Yellow
@@ -206,11 +206,11 @@ function Install-Integrations {
     if (Test-Path $claudeSource) {
         $claudeTarget = Join-Path $TargetPath "CLAUDE.md"
         if (Test-Path $claudeTarget) {
-            $existingContent = Get-Content $claudeTarget -Raw
+            $existingContent = Get-Content $claudeTarget -Raw -Encoding UTF8
             if (-not $existingContent.Contains("CIDRA")) {
-                $cidraContent = Get-Content $claudeSource -Raw
+                $cidraContent = Get-Content $claudeSource -Raw -Encoding UTF8
                 $appendContent = "`n`n# CIDRA Framework Integration`n`n" + $cidraContent
-                Add-Content -Path $claudeTarget -Value $appendContent
+                [System.IO.File]::AppendAllText($claudeTarget, $appendContent, (New-Object System.Text.UTF8Encoding($false)))
                 Write-Host "    [APPENDED] CLAUDE.md" -ForegroundColor $Green
             } else {
                 Write-Host "    [SKIP] CLAUDE.md (CIDRA already present)" -ForegroundColor $Yellow

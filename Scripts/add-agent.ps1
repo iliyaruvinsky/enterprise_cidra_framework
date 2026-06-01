@@ -71,7 +71,7 @@ $shortName = $AgentName -replace 'THE_|_AGENT', ''
 
 # Copy and customize specification
 if (Test-Path $specTemplate) {
-    $specContent = Get-Content $specTemplate -Raw
+    $specContent = Get-Content $specTemplate -Raw -Encoding UTF8
     $specContent = $specContent -replace '\[AGENT_NAME\]', $shortName
     $specContent = $specContent -replace '\[agent_name\]', $shortName.ToLower()
     $specContent = $specContent -replace '\[YYYY-MM-DD\]', (Get-Date -Format "yyyy-MM-dd")
@@ -83,7 +83,7 @@ if (Test-Path $specTemplate) {
 
 # Copy and customize skills
 if (Test-Path $skillsTemplate) {
-    $skillsContent = Get-Content $skillsTemplate -Raw
+    $skillsContent = Get-Content $skillsTemplate -Raw -Encoding UTF8
     $skillsContent = $skillsContent -replace '\[AGENT_NAME\]', $shortName
     $agentPrefix = $shortName.Substring(0, [Math]::Min(3, $shortName.Length)).ToUpper()
     $skillsContent = $skillsContent -replace '\[AGENT_PREFIX\]', $agentPrefix

@@ -198,7 +198,7 @@ Write-Host ""
 Write-Check "Forbidden Words Scan" 2 $totalChecks
 
 $forbiddenPattern = 'מתקדם|חכם|אינטליגנטי|מתוחכם|KPI|advanced|smart|intelligent|sophisticated|state-of-the-art|cutting-edge'
-$forbidden = Select-String -Path "$DocPath\*.md" -Pattern $forbiddenPattern -AllMatches -ErrorAction SilentlyContinue
+$forbidden = Select-String -Path "$DocPath\*.md" -Pattern $forbiddenPattern -AllMatches -Encoding UTF8 -ErrorAction SilentlyContinue
 
 if (!$forbidden) {
     Write-Pass "No forbidden words found"
@@ -222,7 +222,7 @@ Write-Host ""
 Write-Check "Careful Language Verification" 3 $totalChecks
 
 $carefulPattern = 'נראה ש|נראה כי|לפי הקוד|מבוסס על|appears to|seems to|according to|based on'
-$careful = Select-String -Path "$DocPath\*.md" -Pattern $carefulPattern -AllMatches -ErrorAction SilentlyContinue
+$careful = Select-String -Path "$DocPath\*.md" -Pattern $carefulPattern -AllMatches -Encoding UTF8 -ErrorAction SilentlyContinue
 $carefulCount = ($careful | Measure-Object).Count
 
 if ($carefulCount -ge 5) {
@@ -243,7 +243,7 @@ Write-Host ""
 Write-Check "Estimate Language Detection" 4 $totalChecks
 
 $estimatePattern = 'בערך|בקירוב|approximately|around|roughly|about\s+\d|~\d|±|several|many\s+\w+|some\s+\w+'
-$estimates = Select-String -Path "$DocPath\*.md" -Pattern $estimatePattern -AllMatches -ErrorAction SilentlyContinue
+$estimates = Select-String -Path "$DocPath\*.md" -Pattern $estimatePattern -AllMatches -Encoding UTF8 -ErrorAction SilentlyContinue
 
 if (!$estimates) {
     Write-Pass "No estimate language found"
@@ -270,11 +270,11 @@ $specFile = Get-ChildItem "$DocPath\01_*.md" -ErrorAction SilentlyContinue | Sel
 
 if ($specFile) {
     $limitationsPattern = 'מגבלות תיעוד|Documentation Limitations'
-    $hasLimitations = Select-String -Path $specFile.FullName -Pattern $limitationsPattern -Quiet
+    $hasLimitations = Select-String -Path $specFile.FullName -Pattern $limitationsPattern -Encoding UTF8 -Quiet
 
     if ($hasLimitations) {
         # Check for both subsections
-        $content = Get-Content $specFile.FullName -Raw
+        $content = Get-Content $specFile.FullName -Raw -Encoding UTF8
         $hasCannotSection = $content -match 'מה שלא|What CANNOT'
         $hasCanSection = $content -match 'מה שכן|What IS'
 
@@ -303,7 +303,7 @@ Write-Check "Cross-Reference Marking Verification" 6 $totalChecks
 
 if ($specFile) {
     $crossRefPattern = 'משותף מ|shared from|unique to|ייחודי ל'
-    $crossRef = Select-String -Path $specFile.FullName -Pattern $crossRefPattern -AllMatches -ErrorAction SilentlyContinue
+    $crossRef = Select-String -Path $specFile.FullName -Pattern $crossRefPattern -AllMatches -Encoding UTF8 -ErrorAction SilentlyContinue
 
     if ($crossRef) {
         $crossRefCount = ($crossRef | Measure-Object).Count
@@ -364,7 +364,7 @@ Write-Check "Line Count Accuracy" 9 $totalChecks
 
 if ($specFile) {
     # Try to extract documented line count
-    $content = Get-Content $specFile.FullName -Raw
+    $content = Get-Content $specFile.FullName -Raw -Encoding UTF8
 
     if ($content -match '(\d+,?\d*)\s+שורות|(\d+,?\d*)\s+lines') {
         $documentedCount = $matches[1] -replace ',', ''

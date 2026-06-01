@@ -190,7 +190,12 @@ if ($install_vscode -in 'y','Y') {
 $install_cursor = Read-Host "Install Cursor rules? [y/N]"
 if ($install_cursor -in 'y','Y') {
     $CIDRA_DIR = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    Get-Content "$CIDRA_DIR\Protocols\.cursorrules" | Add-Content .cursorrules -Encoding UTF8
+    $cursorRulesContent = Get-Content "$CIDRA_DIR\Protocols\.cursorrules" -Encoding UTF8 -Raw
+    [System.IO.File]::AppendAllText(
+        (Join-Path (Get-Location) ".cursorrules"),
+        $cursorRulesContent,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
     Write-Host "✅ Cursor rules appended to .cursorrules" -ForegroundColor Green
 }
 
