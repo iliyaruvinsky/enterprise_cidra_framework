@@ -1,7 +1,7 @@
 """
 Playwright verification for the CIDRA Documentation Viewer redesign.
 
-Six scenarios + cross-cutting assertions, mirroring the redesign's
+Ten scenarios + cross-cutting assertions, mirroring the redesign's
 "Playwright Test Plan — Apply Phase" section.
 
 Scenarios:
@@ -13,6 +13,14 @@ Scenarios:
      banner-close).
   6. Exports work — .md / .html / .docx round-trip from the same loaded
      fixture, verified by downloaded-file inspection.
+  7. Table styling (v1.2.0).
+  8. CSV / XLSX table exports (v1.5.0).
+  9. Export-menu dropdown (v1.6.0).
+ 10. CSP console cleanliness (v1.6.1) — load real fixture with all CDNs
+     accessible, capture every console message + pageerror, assert ZERO
+     CSP violations ("Content Security Policy" / "connect-src" / "Refused to")
+     and ZERO page errors. Belt-and-suspenders: explicit assertions for
+     the v1.6.1 tightenings (img-src no bare https:, connect-src/npm/ pinned).
 
 Run:
     python C:\\My_AI\\enterprise_cidra_framework\\Protocols\\viewer\\_playwright_test.py
@@ -1522,6 +1530,202 @@ def main():
         record("09.no_pageerror",
                len(page_errors) == 0,
                "errs=" + repr(page_errors[:3]))
+        ctx.close()
+
+        # ====================================================================
+        # Scenario 10 — CSP console cleanliness (v1.6.1)
+        #
+        # Reproduce the bug that motivated the v1.6.1 CSP fix:
+        #   Before: connect-src 'none' blocked DevTools source-map prefetches,
+        #           which surfaced as red "Refused to connect ... Content
+        #           Security Policy" errors in the browser console for every
+        #           jsdelivr-hosted .min.js file.
+        #   After:  connect-src 'self' https://cdn.jsdelivr.net/npm/ permits
+        #           the source-map fetches in CDN mode (and 'self' covers the
+        #           offline ./vendor/* fallback mode).
+        #
+        # Method:
+        #   - Open the viewer with full CDN access (no route blocking).
+        #   - Capture every console message via page.on('console', ...) and
+        #     every uncaught exception via page.on('pageerror', ...) from
+        #     before goto() returns.
+        #   - Load the real RK1 README.md fixture so all rendering paths
+        #     execute (marked, hljs grammar registrations, DOMPurify, etc.).
+        #   - Assert NO console.error message contains any of the CSP
+        #     violation marker strings ("Content Security Policy",
+        #     "connect-src", "Refused to connect", "violates the following
+        #     Content Security Policy directive").
+        #   - Assert pageerror count is 0.
+        #   - Belt-and-suspenders: verify the meta tag actually contains the
+        #     v1.6.1 directives (img-src tightened, connect-src/npm/ pinned,
+        #     form-action 'none' added) — guards against accidental rollback.
+        # ====================================================================
+        ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+        page = ctx.new_page()
+        console_messages = []   # list of {"type": str, "text": str}
+        page_errors_s10 = []
+
+        def _on_console(msg):
+            try:
+                console_messages.append({"type": msg.type, "text": msg.text})
+            except Exception as _ex:
+                console_messages.append({"type": "?",
+                                         "text": "<capture-error: %s>" % _ex})
+
+        page.on("console", _on_console)
+        page.on("pageerror",
+                lambda e: page_errors_s10.append(str(e)))
+
+        page.goto(VIEWER)
+        page.wait_for_load_state("networkidle", timeout=30000)
+
+        # Load fixture so the full render pipeline + all CDN scripts execute.
+        if FIXTURE_MD.exists():
+            page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+            page.wait_for_timeout(2500)
+        # Give DevTools / source-map machinery a beat to either fire or
+        # decline. In Playwright the CDP source-map fetch is still issued
+        # by the renderer even without DevTools attached.
+        page.wait_for_timeout(1500)
+
+        # ---- 10.1 Sanity: viewer actually loaded ----
+        deps_loaded = page.evaluate(
+            "() => ({marked: !!window.__cidraViewer.deps.marked(), "
+            "dompurify: !!window.__cidraViewer.deps.dompurify(), "
+            "hljs: !!window.__cidraViewer.deps.hljs()})"
+        )
+        record("10.deps.marked", deps_loaded.get("marked"),
+               json.dumps(deps_loaded))
+        record("10.deps.dompurify", deps_loaded.get("dompurify"))
+        record("10.deps.hljs", deps_loaded.get("hljs"))
+
+        # ---- 10.2 No uncaught page errors ----
+        record("10.no_pageerror",
+               len(page_errors_s10) == 0,
+               "errs=" + repr(page_errors_s10[:3]))
+
+        # ---- 10.3 Console error count ----
+        errs = [m for m in console_messages if m["type"] == "error"]
+        record("10.console.zero_errors",
+               len(errs) == 0,
+               "n_errors=%d sample=%r" % (len(errs),
+                                          [e["text"][:120] for e in errs[:3]]))
+
+        # ---- 10.4 No "Content Security Policy" string in any error ----
+        csp_errs = [m for m in errs
+                    if "Content Security Policy" in m["text"]
+                    or "Content-Security-Policy" in m["text"]]
+        record("10.console.no_CSP_violation",
+               len(csp_errs) == 0,
+               "n=%d sample=%r" % (len(csp_errs),
+                                   [e["text"][:160] for e in csp_errs[:3]]))
+
+        # ---- 10.5 No "connect-src" mention in any error ----
+        connect_errs = [m for m in errs if "connect-src" in m["text"]]
+        record("10.console.no_connect_src_error",
+               len(connect_errs) == 0,
+               "n=%d sample=%r" % (len(connect_errs),
+                                   [e["text"][:160]
+                                    for e in connect_errs[:3]]))
+
+        # ---- 10.6 No "Refused to connect" / "Refused to load" ----
+        refused = [m for m in errs
+                   if "Refused to connect" in m["text"]
+                   or "Refused to load" in m["text"]]
+        record("10.console.no_refused_to_connect",
+               len(refused) == 0,
+               "n=%d sample=%r" % (len(refused),
+                                   [r["text"][:160] for r in refused[:3]]))
+
+        # ---- 10.7 Warnings tolerated, but capture for the record ----
+        warns = [m for m in console_messages if m["type"] == "warning"]
+        # Soft assertion — we don't fail on warnings, but if a CSP warning
+        # shows up we surface it.
+        csp_warns = [w for w in warns
+                     if "Content Security Policy" in w["text"]
+                     or "connect-src" in w["text"]]
+        record("10.console.no_CSP_warning",
+               len(csp_warns) == 0,
+               "n=%d sample=%r" % (len(csp_warns),
+                                   [w["text"][:160] for w in csp_warns[:3]]))
+
+        # ---- 10.8 Meta tag actually contains the v1.6.1 policy bits ----
+        csp_content = page.evaluate(
+            "() => { const m = document.querySelector("
+            "  'meta[http-equiv=\"Content-Security-Policy\"]'); "
+            "  return m ? m.getAttribute('content') : null; }"
+        )
+        record("10.meta.csp_present",
+               csp_content is not None,
+               "len=%d" % (len(csp_content) if csp_content else 0))
+        record("10.meta.connect_src_allows_self_and_npm",
+               csp_content is not None
+               and "connect-src 'self' https://cdn.jsdelivr.net/npm/"
+               in csp_content,
+               "snippet=" + (csp_content[:200] if csp_content else ""))
+        record("10.meta.connect_src_no_longer_none",
+               csp_content is not None
+               and "connect-src 'none'" not in csp_content)
+        record("10.meta.img_src_no_bare_https_wildcard",
+               csp_content is not None
+               # Adversarial fix #1: drop bare `https:` from img-src.
+               # The string "img-src 'self' data: https:" (terminating semicolon)
+               # MUST NOT appear; "img-src 'self' data: https://cdn.jsdelivr.net"
+               # is the v1.6.1 value.
+               and "img-src 'self' data: https:;" not in csp_content
+               and "img-src 'self' data: https: " not in csp_content,
+               "snippet=" + (csp_content[:200] if csp_content else ""))
+        record("10.meta.form_action_none",
+               csp_content is not None
+               and "form-action 'none'" in csp_content)
+        record("10.meta.upgrade_insecure_requests_present",
+               csp_content is not None
+               and "upgrade-insecure-requests" in csp_content)
+        # frame-ancestors must be ABSENT from the meta tag — Chromium logs
+        # a console error if it appears here (ignored when delivered via
+        # <meta>), and that error would defeat the v1.6.1 clean-console goal.
+        # Real clickjacking protection belongs at the HTTP-header layer.
+        record("10.meta.frame_ancestors_absent_from_meta",
+               csp_content is not None
+               and "frame-ancestors" not in csp_content,
+               "snippet=" + (csp_content[:300] if csp_content else ""))
+
+        # ---- 10.9 Optional: try to query DevTools issues via CDP. ----
+        # Playwright's chromium driver exposes a CDPSession we can use to
+        # subscribe to "Audits.issueAdded" — this is what populates the
+        # DevTools "Issues" panel. We attach, exercise, and assert that no
+        # ContentSecurityPolicyIssue arrives.
+        cdp_issues = []
+        try:
+            cdp = ctx.new_cdp_session(page)
+            cdp.send("Audits.enable")
+            cdp.on("Audits.issueAdded",
+                   lambda evt: cdp_issues.append(evt))
+            # Re-trigger a render to give the audit channel something fresh
+            # to chew on, then wait briefly for any async issue events.
+            if FIXTURE_MD.exists():
+                page.locator("#filePicker").set_input_files(str(FIXTURE_MD))
+                page.wait_for_timeout(2500)
+            page.wait_for_timeout(1500)
+            csp_issues = [
+                i for i in cdp_issues
+                if "ContentSecurityPolicy" in json.dumps(i)
+            ]
+            record("10.cdp.audits_channel_attached", True,
+                   "total_issues=%d" % len(cdp_issues))
+            record("10.cdp.no_CSP_issue_emitted",
+                   len(csp_issues) == 0,
+                   "n=%d sample=%s" %
+                   (len(csp_issues),
+                    json.dumps(csp_issues[:1])[:300]))
+        except Exception as ex:
+            # Not a failure — Playwright versions vary in CDP exposure.
+            record("10.cdp.audits_channel_attached", False,
+                   "skipped: " + str(ex)[:120])
+
+        # ---- 10.10 Screenshot of clean state ----
+        page.screenshot(path=str(OUTPUT / "10_console_clean.png"),
+                        full_page=True)
         ctx.close()
 
         browser.close()

