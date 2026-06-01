@@ -858,7 +858,13 @@ Write-Step "6/9" "Copy source files"
 
 function Get-SourceManifest {
     param([string]$Root, [string]$Filter, [string[]]$Exclude)
-    Get-ChildItem -LiteralPath $Root -File -Recurse -Filter $Filter -ErrorAction SilentlyContinue | Where-Object {
+    # NOTE: do NOT use the -File switch here. In Windows PowerShell 5.1, the
+    # combination `-LiteralPath + -File + -Filter` fails parameter-set
+    # resolution ("Parameter set cannot be resolved using the specified
+    # named parameters."). Filter to files via PSIsContainer post-enumeration
+    # so the call works on both PS 5.1 and PS 7.
+    Get-ChildItem -LiteralPath $Root -Recurse -Filter $Filter -ErrorAction SilentlyContinue | Where-Object {
+        if ($_.PSIsContainer) { return $false }
         $file = $_
         $ok = $true
         foreach ($pat in $Exclude) {
@@ -870,7 +876,7 @@ function Get-SourceManifest {
 
 $expectedFiles = Get-SourceManifest -Root $SourcePath -Filter $SourceFilter -Exclude $SourceExclude
 $expectedCount = $expectedFiles.Count
-$expectedExcludedCount = (Get-ChildItem -LiteralPath $SourcePath -File -Recurse -Filter $SourceFilter -ErrorAction SilentlyContinue).Count - $expectedCount
+$expectedExcludedCount = (Get-ChildItem -LiteralPath $SourcePath -Recurse -Filter $SourceFilter -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer }).Count - $expectedCount
 
 # Decide whether we can skip the copy: only if a previous run wrote the
 # sentinel AND its expected count matches today's enumeration.
@@ -946,7 +952,8 @@ if ($canSkip) {
     if (-not [string]::IsNullOrWhiteSpace($SourceRenameTo) -or `
         ($prevSentinelHadRenameField -and -not [string]::IsNullOrWhiteSpace($prevRenameTo))) {
         if ((Test-Path -LiteralPath $SourceCodeDir) -and -not (Test-WhatIfMode)) {
-            $existing = @(Get-ChildItem -LiteralPath $SourceCodeDir -File -Recurse -ErrorAction SilentlyContinue)
+            # Avoid -File switch (PS 5.1 parameter-set issue with -LiteralPath).
+            $existing = @(Get-ChildItem -LiteralPath $SourceCodeDir -Recurse -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer })
             if ($existing.Count -gt 0) {
                 $shouldWipeSourceCode = $true
             }
