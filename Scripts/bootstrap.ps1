@@ -508,6 +508,19 @@ function Invoke-NativeWithTimeout {
 trap {
     Write-Host ""
     Write-Err "Bootstrap failed: $($_.Exception.Message)"
+    if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) {
+        Write-Host ""
+        Write-Host "  Failure location:" -ForegroundColor $C_Yellow
+        $_.InvocationInfo.PositionMessage -split "`n" | ForEach-Object {
+            Write-Host "    $_" -ForegroundColor $C_Gray
+        }
+        if ($_.Exception.GetType().FullName) {
+            Write-Host "    Exception type : $($_.Exception.GetType().FullName)" -ForegroundColor $C_Gray
+        }
+        if ($_.FullyQualifiedErrorId) {
+            Write-Host "    Error id       : $($_.FullyQualifiedErrorId)" -ForegroundColor $C_Gray
+        }
+    }
     Write-Host ""
     Write-Host "  State on disk:" -ForegroundColor $C_Yellow
     Write-Host "    Project        : $Project" -ForegroundColor $C_Gray
