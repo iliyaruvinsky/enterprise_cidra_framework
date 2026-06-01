@@ -8,6 +8,29 @@
 
 ---
 
+## TL;DR — already done this once, starting another project?
+
+If your machine already has the framework cloned, Cursor/VS Code installed, and Claude Code signed in, the whole per-project mechanical setup is **three lines**:
+
+**POWERSHELL:**
+
+```powershell
+cd "$env:USERPROFILE\tools\enterprise_cidra_framework"
+git pull
+cd Scripts
+.\bootstrap.ps1 -ProjectFolder "<short_name>" -ComponentId "<UPPER_SNAKE_ID>" -SourcePath "<path-to-source>" -ReferenceDocsPath "<optional>" -SourceRenameTo ".cob"
+```
+
+The `git pull` is **not optional** — framework updates ship daily during the early build-out; running an old `bootstrap.ps1` is how today's already-fixed bugs come back.
+
+If the bootstrap exits clean through step 9, open Cursor at the new project folder and continue from **Step 2** (`/brainstorm`).
+
+If it fails at step 7 with `ERROR: CIDRA already installed`, that's a known first-bootstrap quirk — append `-ForceFramework` and re-run. (Cause: the source-copy sentinel lives under `.cidra/_bootstrap/`, which makes `install.ps1`'s "directory exists" check fire before it has actually run. Will be patched out; the flag is the right unblock today.)
+
+For first-time-on-this-machine, read the full Step 1 below.
+
+---
+
 ## Step 1 — Run the bootstrap (one command, all mechanical setup)
 
 This single PowerShell script does every mechanical step: prerequisite check, framework clone or pull, project directory creation, source copy, framework install, slash command registration, and IDE launch.
@@ -402,11 +425,13 @@ Optionally write a Hebrew/English cover letter alongside — see the Maccabi RK1
 | `bootstrap.ps1`: "Framework checkout cannot be fast-forwarded" | You edited framework files locally, or upstream rebased | Run `git -C <FrameworkPath> status` to inspect; clean it, OR pass `-AllowStaleFramework` to use the current SHA |
 | `bootstrap.ps1`: "Framework has uncommitted changes or a stuck merge" | Dirty working tree | Run `git stash` / `git reset --hard` / `git merge --abort` in the framework, then retry |
 | `bootstrap.ps1`: previous copy was interrupted | Source Code\ has partial files | Re-run bootstrap; the sentinel mismatch is detected automatically and the copy is redone |
-| `bootstrap.ps1`: "install.ps1 returned exit code N" | `install.ps1` failed inside its child process | Read the captured output above the error. Pass `-ForceFramework` to wipe and reinstall `.cidra/` + `.claude\commands\` |
+| `bootstrap.ps1` step 7: `ERROR: CIDRA already installed` | First-bootstrap quirk — the source-copy sentinel under `.cidra/_bootstrap/` makes `install.ps1`'s `Test-Path .cidra` check trip before the framework files have actually been installed | Re-run the **same** command with `-ForceFramework` appended. install.ps1 will preserve your sentinel and proceed. (Architectural fix — moving the sentinel out of `.cidra/` — is queued.) |
+| `bootstrap.ps1`: "install.ps1 returned exit code N" (other than the above) | `install.ps1` failed inside its child process | Read the captured output above the error. Pass `-ForceFramework` to wipe and reinstall `.cidra/` + `.claude\commands\` |
 | `install.ps1`: "Access is denied" | Mark-of-the-Web on freshly downloaded scripts | The bootstrap handles this automatically. If running `install.ps1` directly: `Get-ChildItem $framework -Recurse -File \| Unblock-File` |
 | `install.ps1`: Notepad opens instead of running | You are in `cmd.exe`, not PowerShell | Open PowerShell. Run `powershell` first if needed. |
 | Slash commands don't autocomplete | `.claude\commands\` was not copied by `install.ps1` | Verify framework has the updated `install.ps1` (it copies `.claude\commands\` automatically). Re-run `bootstrap.ps1 -ForceFramework` |
-| Hebrew text shows as mojibake in script outputs | File written as UTF-8 without BOM, PowerShell 5.1 reading as CP1252 | Use PowerShell 7 (`pwsh`). Or re-write with UTF-8 BOM: `[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($true))` |
+| Hebrew text shows as mojibake in script outputs | File written as UTF-8 without BOM, PowerShell 5.1 reading as CP1252 | Framework scripts now pass `-Encoding UTF8` explicitly (commit `bffa815`). If you wrote a custom script, do the same — or upgrade to PowerShell 7 where UTF-8 is default. |
+| `bootstrap.ps1` was just updated and step 6 / 7 still fails as if old | Stale `bootstrap.ps1` in your clone — `git pull` was forgotten | Always `cd` into the framework folder and `git pull` before `cd Scripts; .\bootstrap.ps1`. PowerShell parses the script from disk each invocation — no caching, but it only knows what's on disk. |
 | `/document` produces score <100 | Forbidden words, estimate language, or missing sections | Run `/document:fix`, re-validate |
 | Chunker produces oversized chunks (>8000 tokens) | Single section too large | Use a splitting post-step (paragraph-boundary aware). See Maccabi RK1's `_chunker.ps1` for a working example. |
 | Mermaid diagrams render as raw code in viewer | Viewer doesn't support Mermaid | Pre-render to SVG with `mmdc`, embed as `<img src="data:image/svg+xml;base64,...">` |
