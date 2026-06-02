@@ -1,0 +1,654 @@
+# General-Purpose Documentation Plugin (FALLBACK)
+# ============================================================================
+# THIS IS THE FALLBACK PLUGIN.
+# Loaded by THE_DOCUMENTER_AGENT when BRAINSTORM_OUTPUT.yaml's
+#   documenter_config.technology does NOT match any specific plugin
+#   (as400_plugin.yaml, sap_plugin.yaml, c_cpp_plugin.yaml, ...).
+#
+# Goals:
+#   - Universal, language-agnostic extraction rules that work on any source.
+#   - Same shape/sections as as400_plugin.yaml so the documenter agent can
+#     load it without conditional logic.
+#   - All counts come from a shell command (PowerShell on Windows, bash on
+#     POSIX). NEVER estimate counts - per the framework's
+#     anti-hallucination mandate (DOC_INT_010 - DOC_INT_014).
+# ============================================================================
+
+plugin:
+  name: "general_documenter"
+  version: "1.0.0"
+  technology: "Generic / Language-Agnostic (FALLBACK)"
+  languages:
+    - "Any text-based source code"
+    - "C / C++ / C# / Java / Kotlin / Scala"
+    - "Python / Ruby / Perl / PHP"
+    - "JavaScript / TypeScript"
+    - "Go / Rust / Swift"
+    - "Shell / PowerShell / Bash"
+    - "Other (treated as plain text with generic patterns)"
+  adapted_from: "as400_plugin.yaml (structure preserved for documenter compatibility)"
+  fallback: true
+
+  description: |
+    Universal documentation plugin used as the fallback when no
+    technology-specific plugin matches BRAINSTORM_OUTPUT.yaml's
+    documenter_config.technology field.
+
+    Applies the same anti-hallucination methodology as the AS/400 and SAP
+    plugins:
+    - Exact counting (from shell commands - no estimates, ever)
+    - Cross-reference validation (imports / includes / requires)
+    - Careful language ("appears to", "according to code")
+    - Mandatory limitations section (what is/isn't known from code)
+    - 100% accuracy requirement
+
+    Extraction rules are language-neutral regex patterns covering the
+    most common syntaxes (C-family braces, Python indentation, keyword-
+    based function definitions). A documented element is ONLY claimed
+    when a regex matches AND a shell-command count confirms it.
+
+# ============================================================================
+# TECHNOLOGY DETECTION
+# ============================================================================
+
+detection:
+  trigger: "documenter_config.technology in BRAINSTORM_OUTPUT.yaml does not match any specific plugin"
+
+  file_extensions:
+    accept_any: true
+    note: "Plugin is intentionally extension-agnostic - any text file is processed."
+    common_examples:
+      c_family: [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".cs", ".java", ".kt", ".scala"]
+      script: [".py", ".rb", ".pl", ".php", ".sh", ".bash", ".ps1"]
+      web: [".js", ".ts", ".jsx", ".tsx"]
+      systems: [".go", ".rs", ".swift"]
+      other: ["any text-based source file"]
+
+  identification_markers:
+    description: "Heuristic markers - the agent uses these only to log a detected dialect, NOT to gate extraction."
+    c_family_braces:
+      - "Curly braces for blocks: { ... }"
+      - "Semicolon statement terminator"
+    python_like:
+      - "Indentation-based blocks"
+      - "def / class keywords"
+    keyword_based:
+      - "function keyword (JS, PHP)"
+      - "fn keyword (Rust)"
+      - "func keyword (Go, Swift)"
+      - "sub keyword (Perl)"
+
+# ============================================================================
+# FILE SCANNING PATTERNS
+# ============================================================================
+
+scanning:
+  philosophy: |
+    Same as AS/400 and SAP plugins: scan ALL source files first, then
+    identify the relevant ones. DO NOT assume which files matter - let
+    code scanning reveal them.
+
+  scan_all_first:
+    purpose: "Discover every file related to the component being documented"
+    process:
+      - step: "List every file under the project's source root"
+      - step: "Search for the component name across all files"
+      - step: "Identify main file + imported / included files"
+      - step: "Record exact file count from a shell command"
+
+    powershell_commands:
+      list_all_files: |
+        Get-ChildItem -Path [SOURCE_ROOT] -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+      search_component_name: |
+        Get-ChildItem -Path [SOURCE_ROOT] -Recurse -File |
+          Select-String -Pattern '[COMPONENT_NAME]' -List |
+          Select-Object Path
+      search_imports: |
+        Get-ChildItem -Path [SOURCE_ROOT] -Recurse -File |
+          Select-String -Pattern '^\s*(#include|import|from\s+\w+\s+import|require|use\s+)' |
+          Select-Object Path, Line
+
+    bash_commands:
+      list_all_files: |
+        find [SOURCE_ROOT] -type f | wc -l
+      search_component_name: |
+        grep -rl '[COMPONENT_NAME]' [SOURCE_ROOT]
+      search_imports: |
+        grep -rE '^\s*(#include|import|from [a-zA-Z_]+ import|require|use )' [SOURCE_ROOT]
+
+  relevant_file_types:
+    main_file:
+      description: "Primary source file being documented"
+      typical_count: 1
+    dependency_files:
+      description: "Files imported / included by the main file"
+      typical_count: "0-N (counted exactly via shell command, never estimated)"
+    header_files:
+      description: "Declarations referenced by the main file (e.g. .h, .hpp, .d.ts)"
+      typical_count: "0-N (counted exactly)"
+    test_files:
+      description: "Tests that exercise the documented file (reference only)"
+      typical_count: "0-N (counted exactly)"
+
+# ============================================================================
+# EXTRACTION RULES (LANGUAGE-NEUTRAL)
+# ============================================================================
+
+extraction_rules:
+
+  element_types:
+    - function
+    - class
+    - method
+    - comment
+    - import
+    - constant
+
+  functions:
+    description: "Function or procedure definitions across common syntaxes."
+    regex_patterns:
+      c_family_function: '^[A-Za-z_][A-Za-z0-9_\s\*]*\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*\)\s*\{'
+      python_def: '^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\('
+      python_async_def: '^\s*async\s+def\s+[A-Za-z_][A-Za-z0-9_]*\s*\('
+      js_function_keyword: '^\s*(export\s+)?(async\s+)?function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      js_arrow_assigned: '^\s*(const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*(async\s*)?\([^)]*\)\s*=>'
+      go_func: '^\s*func\s+(\([^)]*\)\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\('
+      rust_fn: '^\s*(pub\s+)?(async\s+)?fn\s+[A-Za-z_][A-Za-z0-9_]*\s*[<(]'
+      swift_func: '^\s*(public\s+|private\s+|internal\s+|fileprivate\s+|open\s+)?func\s+[A-Za-z_][A-Za-z0-9_]*\s*[<(]'
+      ruby_def: '^\s*def\s+[A-Za-z_][A-Za-z0-9_!?=]*'
+      perl_sub: '^\s*sub\s+[A-Za-z_][A-Za-z0-9_]*\s*\{?'
+      shell_function: '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)\s*\{'
+      powershell_function: '^\s*function\s+[A-Za-z_][A-Za-z0-9_-]*\s*\{'
+    note: "Apply only the patterns matching the detected language; count matches exactly."
+
+  classes:
+    description: "Class / struct / interface declarations."
+    regex_patterns:
+      generic_class: '^\s*(public\s+|private\s+|protected\s+|abstract\s+|final\s+|sealed\s+|export\s+)*class\s+[A-Za-z_][A-Za-z0-9_]*'
+      c_cpp_struct: '^\s*(typedef\s+)?struct\s+[A-Za-z_][A-Za-z0-9_]*'
+      c_cpp_union: '^\s*(typedef\s+)?union\s+[A-Za-z_][A-Za-z0-9_]*'
+      interface: '^\s*(public\s+|export\s+)?interface\s+[A-Za-z_][A-Za-z0-9_]*'
+      go_type: '^\s*type\s+[A-Za-z_][A-Za-z0-9_]*\s+(struct|interface)\s*\{'
+      rust_struct: '^\s*(pub\s+)?struct\s+[A-Za-z_][A-Za-z0-9_]*'
+      rust_enum: '^\s*(pub\s+)?enum\s+[A-Za-z_][A-Za-z0-9_]*'
+      python_class: '^\s*class\s+[A-Za-z_][A-Za-z0-9_]*\s*[\(:]'
+
+  methods:
+    description: "Class member functions (subset of functions, detected by indentation or class scope)."
+    note: |
+      A method is a function defined inside a class body. The agent
+      identifies methods by:
+        1. Finding class declarations.
+        2. Counting function definitions within the class block.
+      No standalone regex - relies on the function patterns above with
+      scope tracking.
+
+  comments:
+    description: "Comment blocks across common syntaxes."
+    regex_patterns:
+      single_line_slash: '//.*$'
+      single_line_hash: '^\s*#(?!include|!).*$'
+      single_line_dash: '^\s*--.*$'
+      single_line_quote: '^\s*''.*$'
+      block_c_style_open: '/\*'
+      block_c_style_close: '\*/'
+      python_docstring: '"""|''''''
+      html_comment_open: '<!--'
+      html_comment_close: '-->'
+    note: "Count only lines that match - never assume comment density."
+
+  imports:
+    description: "Import / include / require / use statements."
+    regex_patterns:
+      c_cpp_include: '^\s*#\s*include\s+[<"][^>"]+[>"]'
+      python_import: '^\s*(import|from)\s+[A-Za-z_][A-Za-z0-9_.]*'
+      java_import: '^\s*import\s+(static\s+)?[A-Za-z_][A-Za-z0-9_.]*\s*;'
+      js_es_import: '^\s*import\s+.+\s+from\s+[''"][^''"]+[''"]'
+      js_require: '\brequire\s*\(\s*[''"][^''"]+[''"]\s*\)'
+      go_import: '^\s*import\s+(\(|"[^"]+")'
+      rust_use: '^\s*use\s+[A-Za-z_][A-Za-z0-9_:]*'
+      ruby_require: '^\s*(require|require_relative)\s+[''"][^''"]+[''"]'
+      perl_use: '^\s*use\s+[A-Za-z_][A-Za-z0-9_:]*'
+      php_use: '^\s*use\s+[A-Za-z_\\][A-Za-z0-9_\\]*\s*;'
+      cs_using: '^\s*using\s+[A-Za-z_][A-Za-z0-9_.]*\s*;'
+
+  constants:
+    description: "Top-level constant / define declarations."
+    regex_patterns:
+      c_define: '^\s*#\s*define\s+[A-Z_][A-Z0-9_]*'
+      java_constant: '^\s*(public\s+|private\s+|protected\s+)?(static\s+)?final\s+\w+\s+[A-Z_][A-Z0-9_]*\s*='
+      js_const: '^\s*(export\s+)?const\s+[A-Z_][A-Z0-9_]*\s*='
+      python_const: '^[A-Z_][A-Z0-9_]*\s*='
+      go_const: '^\s*const\s+[A-Za-z_][A-Za-z0-9_]*'
+      rust_const: '^\s*(pub\s+)?const\s+[A-Z_][A-Z0-9_]*\s*:'
+
+# ============================================================================
+# STRUCTURE DETECTION
+# ============================================================================
+
+structure:
+
+  approach: |
+    Without a specific dialect, structure is derived from the extraction
+    rules above. The agent builds a flat inventory:
+      - functions[]      (with line number, signature)
+      - classes[]        (with line number, member count)
+      - methods[]        (with parent class, line number)
+      - imports[]        (with target)
+      - constants[]      (with name, line number)
+      - comments[]       (with line number range)
+
+  scoping_rules:
+    c_family: "Track depth with { and } - a function ends when its opening brace closes."
+    indentation_based: "For Python/YAML/etc., a block ends when indentation returns to the function's level."
+    keyword_based: "For Ruby (def/end), Lua (function/end), VB (Sub/End Sub) - match start/end keywords."
+
+  cross_reference:
+    purpose: "Identify shared vs unique elements (equivalent to AS/400 copy member check)"
+    process:
+      - step: "Extract all import / include / require / use statements from the main file"
+      - step: "Read each imported file (within project scope)"
+      - step: "For each function/class/constant in main file:"
+      - step: "  - Search for definition in imported files"
+      - step: "  - If found: mark as 'shared from [IMPORTED_FILE]'"
+      - step: "  - If not found: mark as 'unique to this file'"
+
+    marking_format:
+      shared_element: |
+        ### N. ELEMENT_NAME (shared from [SOURCE_FILE]!)
+        **Location in file**: line [N]
+        **Primary definition**: [SOURCE_FILE] line [M]
+        **Note**: Element shared across multiple files.
+
+      unique_element: |
+        ### N. ELEMENT_NAME (unique to this file)
+        **Location in file**: lines [N]-[M]
+        **Note**: Element defined only in this file.
+
+# ============================================================================
+# EXACT COUNTING COMMANDS
+# Critical: NO estimates, NO approximations.
+# All counts come from a shell command.
+# ============================================================================
+
+exact_counting_command:
+
+  total_lines:
+    powershell: "(Get-Content [FILE_PATH]).Count"
+    bash: "wc -l < [FILE_PATH]"
+    verification: "required - must be exact, no estimates"
+    rule: "Run the command and quote its output verbatim in documentation."
+
+  non_blank_lines:
+    powershell: |
+      (Get-Content [FILE_PATH] | Where-Object { $_.Trim() -ne '' }).Count
+    bash: |
+      grep -c -v '^[[:space:]]*$' [FILE_PATH]
+
+  comment_lines:
+    powershell: |
+      (Get-Content [FILE_PATH] | Select-String -Pattern '(^\s*//|^\s*#(?!include|!)|^\s*--|/\*|\*/)').Count
+    bash: |
+      grep -cE '(^\s*//|^\s*#[^!]|^\s*--|/\*|\*/)' [FILE_PATH]
+
+counts:
+
+  functions:
+    powershell_template: |
+      (Select-String -Path [FILE_PATH] -Pattern '[FUNCTION_REGEX]' -AllMatches).Matches.Count
+    bash_template: |
+      grep -cE '[FUNCTION_REGEX]' [FILE_PATH]
+    rule: "Choose the function_regex matching the file's language from extraction_rules.functions."
+
+  classes:
+    powershell_template: |
+      (Select-String -Path [FILE_PATH] -Pattern '[CLASS_REGEX]' -AllMatches).Matches.Count
+    bash_template: |
+      grep -cE '[CLASS_REGEX]' [FILE_PATH]
+
+  methods:
+    note: |
+      Methods cannot be counted by a single regex - they require scope
+      tracking. Count manually after listing each class, OR count all
+      function-like definitions and subtract top-level functions.
+    rule: "Manual count from listed classes - same discipline as AS/400 DS field counting."
+
+  imports:
+    powershell_template: |
+      (Select-String -Path [FILE_PATH] -Pattern '[IMPORT_REGEX]' -AllMatches).Matches.Count
+    bash_template: |
+      grep -cE '[IMPORT_REGEX]' [FILE_PATH]
+
+  constants:
+    powershell_template: |
+      (Select-String -Path [FILE_PATH] -Pattern '[CONSTANT_REGEX]' -AllMatches).Matches.Count
+    bash_template: |
+      grep -cE '[CONSTANT_REGEX]' [FILE_PATH]
+
+  enforcement:
+    rule: "Per the framework's anti-hallucination mandate, ALL counts MUST come from a shell command. NEVER from estimation, scrolling, or memory."
+    forbidden_phrases:
+      - "approximately"
+      - "around"
+      - "~"
+      - "several"
+      - "many"
+      - "a few"
+      - "roughly"
+
+# ============================================================================
+# BUSINESS LOGIC EXTRACTION
+# ============================================================================
+
+business_logic:
+
+  extraction_sources:
+    primary: "Function / method bodies"
+    secondary: "Top-level statements (scripts, module init)"
+    tertiary: "Comment headers describing intent (verify against code)"
+
+  documentation_format:
+    careful_language: |
+      USE: "appears to", "seems to", "according to code"
+      NEVER: "the program does X", "the system performs Y"
+
+      Example:
+      "According to the code, function `process_order` appears to:
+       1. Read input from stdin (line 45)
+       2. Parse JSON payload (line 52)
+       3. Write result to file (line 78)"
+
+    code_references: |
+      Always include exact line numbers:
+       "Input read (line 45)"
+       "JSON parse (lines 52-60)"
+
+    limitations: |
+      Always state what CANNOT be determined from source alone:
+       - External service behavior (HTTP calls)
+       - Runtime configuration (env vars, config files not read)
+       - Library internals (imported but not analyzed)
+       - Database schema (only queries visible)
+
+# ============================================================================
+# DOCUMENTATION TEMPLATES
+# ============================================================================
+
+documentation_structure:
+
+  required_files_count: 7
+  rationale: "Matches as400_plugin and sap_plugin - documenter agent expects 7 files per component."
+
+  file_01_component_specification:
+    filename: "01_COMPONENT_SPECIFICATION.md"
+    sections:
+      - "Component Details (based on actual code)"
+      - "General Description"
+      - "Imports / Dependencies"
+      - "Functions / Methods"
+      - "Classes / Structures"
+      - "Constants"
+      - "Documentation Limitations"
+
+  file_02_interface:
+    filename: "02_INTERFACE.md"
+    purpose: "Document the public API surface (exported functions, classes, constants)"
+
+  file_03_technical_analysis:
+    filename: "03_TECHNICAL_ANALYSIS.md"
+    purpose: "Detailed technical breakdown with exact counts"
+
+  file_04_business_logic:
+    filename: "04_BUSINESS_LOGIC.md"
+    purpose: "Document flow and rules extracted from code"
+
+  file_05_code_artifacts:
+    filename: "05_CODE_ARTIFACTS.md"
+    purpose: "Key code snippets (with line numbers)"
+
+  file_06_readme:
+    filename: "README.md"
+    purpose: "Quick overview"
+
+  file_07_validation_report:
+    filename: "VALIDATION_REPORT.md"
+    purpose: "Verification against actual code, quality score (target: 100/100)"
+
+# ============================================================================
+# QUALITY CHECKS
+# ============================================================================
+
+quality_standards:
+
+  forbidden_words:
+    english:
+      - "advanced"
+      - "smart"
+      - "intelligent"
+      - "sophisticated"
+      - "state-of-the-art"
+      - "robust"
+      - "powerful"
+    hebrew:
+      - "מתקדם"
+      - "חכם"
+      - "אינטליגנטי"
+      - "מתוחכם"
+      - "אוטומטי (unless provably automated)"
+    detection_command_powershell: |
+      Select-String -Path [DOC_FILES] -Pattern '(advanced|smart|intelligent|sophisticated|מתקדם|חכם)'
+    detection_command_bash: |
+      grep -iE '(advanced|smart|intelligent|sophisticated|מתקדם|חכם)' [DOC_FILES]
+    action_if_found: "Remove or replace with factual description."
+
+  required_language:
+    careful_phrases:
+      - "appears to"
+      - "seems to"
+      - "according to code"
+      - "based on code"
+      - "נראה ש"
+      - "לפי הקוד"
+    minimum_occurrences: 5
+    rule: "At least 5 careful-language phrases per documentation file (per DOC_INT_011 in shared/anti_hallucination_engine.yaml)."
+
+  required_sections:
+    limitations_section:
+      required: true
+      format: |
+        ## Documentation Limitations
+
+        ### What CANNOT be determined from code:
+        - [List]
+
+        ### What IS known from code:
+        - [List]
+      examples_unknown:
+        - "External service behavior (HTTP calls observed but endpoints unverified)"
+        - "Runtime configuration (env vars read but values unknown)"
+        - "Library internals (third-party imports not analyzed)"
+        - "Database schema (only queries visible)"
+
+  exact_counting:
+    requirement: "ALL counts must be exact from a shell command - NO estimates."
+    forbidden:
+      - "approximately"
+      - "around"
+      - "~"
+      - "+"
+      - "several"
+      - "many"
+    required:
+      - "Exact PowerShell / grep results quoted in documentation"
+      - "Command shown so reviewer can re-run"
+
+  cross_reference_mandatory:
+    process: "Check EVERY function / class / constant against imported files"
+    marking: "Explicitly mark as shared (with source file + line) or unique"
+
+# ============================================================================
+# AUTOMATED VALIDATION
+# ============================================================================
+
+automated_checks:
+
+  pre_documentation_checks:
+    - name: "Count all source files in scope"
+      powershell: "(Get-ChildItem -Path [SOURCE_ROOT] -Recurse -File).Count"
+      bash: "find [SOURCE_ROOT] -type f | wc -l"
+    - name: "Locate main file"
+      powershell: "Get-ChildItem -Path [SOURCE_ROOT] -Recurse -Filter [COMPONENT_FILE]"
+    - name: "Identify imports"
+      powershell: |
+        Select-String -Path [MAIN_FILE] -Pattern '^\s*(#include|import|from|require|use\s+)'
+
+  post_documentation_checks:
+    - name: "File count verification"
+      expected: "Exactly 7 files in component directory"
+      powershell: "(Get-ChildItem -Path [DOC_DIR] -Filter '*.md').Count"
+    - name: "Forbidden words scan"
+      expected: "Zero occurrences"
+      powershell: |
+        Select-String -Path [DOC_FILES] -Pattern '(advanced|smart|intelligent|sophisticated)'
+    - name: "Careful language verification"
+      expected: "At least 5 occurrences per file"
+      powershell: |
+        Select-String -Path [DOC_FILES] -Pattern '(appears to|seems to|according to|based on)'
+    - name: "Exact counting verification"
+      expected: "Zero occurrences of estimate words"
+      powershell: |
+        Select-String -Path [DOC_FILES] -Pattern '(approximately|around|several|many|roughly)'
+    - name: "Limitations section check"
+      expected: "Section found in 01_COMPONENT_SPECIFICATION.md"
+      powershell: |
+        Select-String -Path [DOC_DIR]/01_COMPONENT_SPECIFICATION.md -Pattern 'Documentation Limitations'
+    - name: "Cross-reference marking check"
+      expected: "At least 1 'shared from' if imports exist"
+      powershell: |
+        Select-String -Path [DOC_FILES] -Pattern '(shared from|unique to this file)'
+    - name: "Line count accuracy"
+      process:
+        - "Read documented line count from 01_COMPONENT_SPECIFICATION.md"
+        - "Run: (Get-Content [SOURCE]).Count"
+        - "Must match exactly."
+
+  quality_score_calculation:
+    total_points: 100
+    deductions:
+      - { item: "Forbidden word found",           penalty: "-5 per word" }
+      - { item: "Missing careful language",       penalty: "-10" }
+      - { item: "Estimate instead of exact count", penalty: "-15 per estimate" }
+      - { item: "Missing limitations section",    penalty: "-20" }
+      - { item: "Cross-reference not checked",    penalty: "-25" }
+      - { item: "File count wrong (not 7 files)", penalty: "-30" }
+      - { item: "Line count inaccurate",          penalty: "-40" }
+    passing_score: 100
+    note: "Same standard as as400_plugin and sap_plugin - only 100/100 is acceptable."
+
+# ============================================================================
+# WORKFLOW
+# ============================================================================
+
+workflow:
+
+  phase_1_analyze:
+    duration: "5 minutes"
+    steps:
+      - "List all source files under [SOURCE_ROOT] (exact count from shell)"
+      - "Identify main file containing [COMPONENT_NAME]"
+      - "Find imports / includes / requires / uses"
+      - "List relevant files (main + dependencies)"
+    output: "List of relevant source files"
+
+  phase_2_count:
+    duration: "5 minutes"
+    steps:
+      - "Run (Get-Content FILE).Count for total lines"
+      - "Run regex-based shell counts for functions / classes / imports / constants"
+      - "List methods per class (manual count, like AS/400 DS fields)"
+    output: "Exact counts for all elements"
+
+  phase_3_cross_reference:
+    duration: "5 minutes"
+    steps:
+      - "Extract all imports from main file"
+      - "Read each imported file in scope"
+      - "Mark every function / class / constant as shared or unique"
+    output: "Shared vs unique marking"
+
+  phase_4_document:
+    duration: "15 minutes"
+    steps:
+      - "Create 7 documentation files from templates"
+      - "Use careful language throughout (minimum 5 occurrences per file)"
+      - "Include exact counts (with shell command shown)"
+      - "Mark shared / unique explicitly"
+      - "Add Documentation Limitations section"
+      - "Reference exact line numbers"
+    output: "7 documentation files completed"
+
+  phase_5_validate:
+    duration: "5 minutes"
+    steps:
+      - "Run automated quality checks above"
+      - "Verify forbidden words = 0"
+      - "Verify careful language >= 5 per file"
+      - "Verify limitations section exists"
+      - "Verify cross-references marked"
+      - "Verify exact counts match code"
+      - "Calculate quality score"
+    output: "Quality score (target: 100/100)"
+
+  total_time: "~35 minutes per component"
+
+# ============================================================================
+# SUCCESS CRITERIA
+# ============================================================================
+
+success_metrics:
+  accuracy:
+    target: "100% code alignment"
+    verification: "Every documented element traceable to a line number that matches"
+  hallucinations:
+    target: "Zero hallucinations"
+    verification: "No invented functions, classes, or constants - every claim has a shell command behind its count"
+  completeness:
+    target: "7 files per component"
+    verification: "File count = 7 exactly"
+  cross_reference:
+    target: "All shared elements marked"
+    verification: "grep for 'shared from' finds occurrences when imports exist"
+  language:
+    target: "Careful language throughout"
+    verification: ">= 5 careful phrases per documentation file"
+  counting:
+    target: "Exact counts only"
+    verification: "grep for estimate words = 0 results"
+  quality_score:
+    target: "100/100"
+    note: "Same as as400_plugin - only 100/100 acceptable"
+
+# ============================================================================
+# PLUGIN METADATA
+# ============================================================================
+
+metadata:
+  created_from: "as400_plugin.yaml (structure preserved)"
+  purpose: "Universal fallback when no technology-specific plugin matches"
+  fallback: true
+  load_order:
+    rule: |
+      THE_DOCUMENTER_AGENT loads plugins in this order:
+        1. Read documenter_config.technology from BRAINSTORM_OUTPUT.yaml
+        2. Match against known plugins (as400, sap, c_cpp, ...)
+        3. If no match, load general_plugin.yaml (this file)
+  confidence_level: "Medium"
+  confidence_reasoning: |
+    Methodology (exact counting, careful language, limitations section,
+    cross-reference) is proven in MACCABI SAP and AS/400 contexts.
+    Language-neutral regex patterns are well-tested for common syntaxes
+    but may need refinement for unusual dialects.
+
+    Recommended first use: validate against a small, well-known C/C++ or
+    Python file before applying to large codebases. Where the language
+    has a dedicated plugin, use that plugin instead - this is a fallback.

@@ -113,6 +113,8 @@ documenter_config:
   component_name: "[COMPONENT_NAME]"
   validation_report_naming: "[filename pattern]"
   quality_threshold: 100
+  # Pick during Stage 0 elicitation based on the source code's primary language/stack; if no specific plugin matches, use general_plugin.yaml
+  technology_plugin: "[plugin file name from Agents/THE_DOCUMENTER_AGENT/, e.g. as400_plugin.yaml | sap_plugin.yaml | c_cpp_plugin.yaml | react_plugin.yaml | python_plugin.yaml | general_plugin.yaml]"
 
 chunker_config:
   strategy_hint: "[section_level | method_level | hybrid | auto]"

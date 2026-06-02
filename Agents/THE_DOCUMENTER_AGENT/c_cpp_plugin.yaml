@@ -1,0 +1,1079 @@
+# C / C++ Documentation Plugin
+# Adapted from proven AS/400 (RPG/COBOL/CL) methodology
+# Technology: C and C++ source code (procedural + object-oriented)
+# Status: Adapted from as400_plugin.yaml with C/C++-specific patterns
+
+plugin:
+  name: "c_cpp_documenter"
+  version: "1.0.0"
+  technology: "C / C++ (ISO C, ISO C++)"
+  languages:
+    - "C (C89, C99, C11, C17)"
+    - "C++ (C++98, C++11, C++14, C++17, C++20)"
+  adapted_from: "as400_plugin.yaml (proven anti-hallucination methodology)"
+
+  description: |
+    C / C++ source documentation plugin using proven anti-hallucination methodology
+    from AS/400 (MACCABI) project.
+
+    Adapts the same principles:
+    - Exact counting (no estimates)
+    - Cross-reference validation (Header files = Copy member equivalent)
+    - Careful language ("appears to", "according to code")
+    - Mandatory limitations section (what is/isn't known from code)
+    - 100% accuracy requirement
+
+# ============================================================================
+# TECHNOLOGY DETECTION
+# ============================================================================
+
+detection:
+  file_extensions:
+    c_source:
+      - ".c"
+    cpp_source:
+      - ".cpp"
+      - ".cc"
+      - ".cxx"
+      - ".c++"
+    c_header:
+      - ".h"
+    cpp_header:
+      - ".hpp"
+      - ".hh"
+      - ".hxx"
+      - ".h++"
+
+  source_layout_patterns:
+    common_directories: "src/|source/|include/|lib/|app/"
+    build_file_patterns: "Makefile|CMakeLists.txt|*.mk|*.cmake"
+
+  identification_markers:
+    c_only:
+      - "#include <stdio.h>"
+      - "struct ... { ... };"
+      - "typedef struct"
+      - "extern "
+    cpp_specific:
+      - "class "
+      - "namespace "
+      - "template<"
+      - "template <"
+      - "::" (scope resolution)
+      - "std::"
+      - "public:"
+      - "private:"
+      - "protected:"
+    preprocessor_common:
+      - "#include"
+      - "#define"
+      - "#ifdef"
+      - "#ifndef"
+      - "#endif"
+      - "#pragma"
+
+# ============================================================================
+# FILE SCANNING PATTERNS
+# Adapted from AS/400: Scan all sources first, then identify relevant files
+# ============================================================================
+
+scanning:
+  philosophy: |
+    Same as AS/400: Scan ALL source/header files first, then identify relevant files.
+    DO NOT assume which files are relevant - let code scanning reveal them.
+
+  scan_all_first:
+    purpose: "Find all source/header files related to component/module"
+    process:
+      - step: "List all .c/.cpp/.h/.hpp files in project tree"
+      - step: "Search for symbol references (function/class names) across all files"
+      - step: "Identify main translation unit + included headers + linked sources"
+      - step: "Typical result: 50-500 files scanned → 3-15 relevant found"
+
+    powershell_commands:
+      list_files: |
+        # List all C/C++ source and header files:
+        Get-ChildItem -Path [ROOT] -Recurse -Include *.c,*.cpp,*.cc,*.cxx,*.c++,*.h,*.hpp,*.hh,*.hxx,*.h++
+
+      search_symbol_name: |
+        # Search for symbol references across project:
+        Select-String -Path [ROOT]\**\*.c*,[ROOT]\**\*.h* -Pattern "[SYMBOL_NAME]"
+
+      search_includes: |
+        # Find #include directives (headers used):
+        Select-String -Path [FILE] -Pattern '^\s*#\s*include'
+
+  relevant_file_types:
+    main_translation_unit:
+      description: "Primary .c/.cpp file being documented"
+      typical_count: 1
+      file_types: ["*.c", "*.cpp", "*.cc", "*.cxx"]
+
+    header_files:
+      description: "Shared declarations, types, macros, prototypes (like Copy Members)"
+      typical_count: "2-15"
+      file_types: ["*.h", "*.hpp", "*.hh", "*.hxx"]
+      importance: "CRITICAL - equivalent to AS/400 Copy Members / SAP Component Controller"
+
+    companion_sources:
+      description: "Sibling implementations called from main"
+      typical_count: "1-10"
+      file_types: ["*.c", "*.cpp"]
+
+    build_artifacts:
+      description: "Build system files (read-only reference)"
+      typical_count: "1-5"
+      file_types: ["Makefile", "CMakeLists.txt", "*.mk", "*.cmake"]
+
+    inline_assembly_or_resources:
+      description: "Embedded asm, .inc, .def, resource files (if any)"
+      typical_count: "0-3"
+      file_types: ["*.inc", "*.def", "*.asm", "*.s"]
+
+# ============================================================================
+# STRUCTURE DETECTION
+# Adapted from AS/400: Specs/Divisions → C/C++ language constructs
+# ============================================================================
+
+structure_detection:
+
+  preprocessor_directives:
+    includes:
+      description: "Header inclusions (system vs user)"
+      detect_pattern: "^\\s*#\\s*include"
+      extract:
+        system_include:
+          pattern: "^\\s*#\\s*include\\s*<[^>]+>"
+          note: "Angle brackets <...> = system / standard library"
+        user_include:
+          pattern: "^\\s*#\\s*include\\s*\"[^\"]+\""
+          note: "Double quotes \"...\" = user / project header"
+      count: "Exact count of #include lines (NO estimates)"
+      equivalent_to_as400: "Like /COPY / COPY directives (header = copy member)"
+
+    defines:
+      description: "Macro definitions"
+      detect_pattern: "^\\s*#\\s*define\\s+"
+      extract:
+        - "Object-like macros: #define NAME value"
+        - "Function-like macros: #define NAME(args) body"
+      count: "Exact count of #define lines"
+
+    conditional_compilation:
+      description: "Conditional preprocessor blocks (#ifdef / #ifndef / #if)"
+      detect_patterns:
+        - "^\\s*#\\s*ifdef\\s+"
+        - "^\\s*#\\s*ifndef\\s+"
+        - "^\\s*#\\s*if\\s+"
+        - "^\\s*#\\s*else"
+        - "^\\s*#\\s*elif\\s+"
+        - "^\\s*#\\s*endif"
+      note: "Track conditional code branches - may hide platform-specific logic"
+
+    header_guards:
+      description: "Include guards in header files"
+      pattern_pair: "#ifndef X / #define X / ... / #endif"
+      alternative: "#pragma once"
+      verification: "Check every header for either pattern"
+
+    pragmas:
+      detect_pattern: "^\\s*#\\s*pragma\\s+"
+      examples:
+        - "#pragma once"
+        - "#pragma pack(...)"
+        - "#pragma warning(...)"
+
+  c_constructs:
+    function_definitions:
+      description: "Function implementations (with body)"
+      detect_heuristic: |
+        return-type name(params) {
+        Distinguish DEFINITION (followed by '{') from DECLARATION (ends with ';').
+      regex_definition: "^[A-Za-z_][\\w\\s\\*]*\\s+\\**[A-Za-z_]\\w*\\s*\\([^;]*\\)\\s*\\{?$"
+      regex_declaration: "^[A-Za-z_][\\w\\s\\*]*\\s+\\**[A-Za-z_]\\w*\\s*\\([^)]*\\)\\s*;"
+      extract:
+        - "Return type"
+        - "Function name"
+        - "Parameter list"
+        - "Storage class (static / extern / inline)"
+      count: "Exact count of function definitions (NOT declarations)"
+      equivalent_to_as400: "Like RPG Procedures / COBOL Paragraphs"
+
+    structs:
+      description: "struct definitions"
+      detect_pattern: "\\bstruct\\s+[A-Za-z_]\\w*\\s*\\{|typedef\\s+struct"
+      extract:
+        - "Struct name (tag)"
+        - "Typedef alias (if any)"
+        - "Fields (count individually)"
+      count: "Exact count of struct definitions"
+      equivalent_to_as400: "Like RPG Data Structures / COBOL 01-level items"
+
+    unions:
+      description: "union definitions"
+      detect_pattern: "\\bunion\\s+[A-Za-z_]\\w*\\s*\\{|typedef\\s+union"
+      count: "Exact count of union definitions"
+
+    enums:
+      description: "enum definitions"
+      detect_pattern: "\\benum\\s+[A-Za-z_]\\w*\\s*\\{|typedef\\s+enum"
+      extract:
+        - "Enum name"
+        - "Enumerator values (count individually)"
+      count: "Exact count of enum definitions"
+
+    typedefs:
+      description: "Type aliases"
+      detect_pattern: "^\\s*typedef\\s+"
+      count: "Exact count of typedef lines"
+
+    global_variables:
+      description: "File-scope variables"
+      detect_heuristic: "Declarations at file scope (outside any function)"
+      modifiers: "static / extern / const / volatile"
+      count: "Manual identification - exact count"
+
+  cpp_constructs:
+    classes:
+      description: "class definitions"
+      detect_pattern: "\\bclass\\s+[A-Za-z_]\\w*\\s*[:{]"
+      extract:
+        - "Class name"
+        - "Base classes (after ':')"
+        - "Access specifiers (public/protected/private)"
+        - "Member functions (count individually)"
+        - "Member variables (count individually)"
+      count: "Exact count of class definitions"
+      equivalent_to_as400: "Like RPG Data Structures + Procedures combined"
+
+    namespaces:
+      description: "namespace blocks"
+      detect_pattern: "\\bnamespace\\s+[A-Za-z_]\\w*\\s*\\{|\\bnamespace\\s*\\{"
+      anonymous_pattern: "\\bnamespace\\s*\\{"
+      count: "Exact count of namespace blocks"
+
+    templates:
+      description: "Template declarations"
+      detect_pattern: "^\\s*template\\s*<"
+      extract:
+        - "Template parameters (typename / class / non-type)"
+        - "Following declaration (function / class / variable)"
+      count: "Exact count of template declarations"
+
+    extern_c_blocks:
+      description: "C linkage blocks (for C/C++ interop)"
+      detect_pattern: "extern\\s+\"C\"\\s*\\{"
+      count: "Exact count of extern \"C\" blocks"
+      importance: "Marks C ABI boundaries"
+
+    member_functions:
+      description: "Methods (inside class or with Class::name)"
+      detect_pattern: "[A-Za-z_]\\w*::[A-Za-z_]\\w*\\s*\\("
+      note: "Includes out-of-line definitions"
+
+    constructors_destructors:
+      detect_pattern_ctor: "[A-Za-z_]\\w*::\\1\\s*\\("
+      detect_pattern_dtor: "[A-Za-z_]\\w*::~[A-Za-z_]\\w*\\s*\\("
+
+    operator_overloads:
+      detect_pattern: "\\boperator\\s*(\\+\\+|--|\\+|-|\\*|/|=|==|!=|<|>|<=|>=|\\[\\]|\\(\\)|->)"
+
+    modifiers:
+      static: "^\\s*static\\s+"
+      inline: "^\\s*inline\\s+"
+      constexpr: "^\\s*constexpr\\s+"
+      const: "\\bconst\\b"
+      virtual: "^\\s*virtual\\s+"
+      override: "\\boverride\\b"
+      final: "\\bfinal\\b"
+      noexcept: "\\bnoexcept\\b"
+
+# ============================================================================
+# EXACT COUNTING COMMANDS
+# Critical: NO estimates, NO approximations (proven in MACCABI)
+# ============================================================================
+
+counting_commands:
+
+  line_counts:
+    total_lines:
+      powershell: "(Get-Content [FILE_PATH]).Count"
+      bash: "wc -l [FILE_PATH]"
+      verification: "required - must be exact, no estimates"
+
+    code_vs_comment_lines:
+      single_line_comments_powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*//').Count
+      block_comments_note: "Block comments /* ... */ require multi-line aware counting"
+
+  preprocessor_counts:
+    include_total:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*#\s*include').Count
+    include_system:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*#\s*include\s*<').Count
+    include_user:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*#\s*include\s*"').Count
+    defines:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*#\s*define\s+').Count
+    ifdef_blocks:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*#\s*(ifdef|ifndef|if)\s+').Count
+
+  structure_counts_c:
+    structs:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '\bstruct\s+\w+\s*\{').Count
+    unions:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '\bunion\s+\w+\s*\{').Count
+    enums:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '\benum\s+\w+\s*\{').Count
+    typedefs:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*typedef\s+').Count
+
+  structure_fields:
+    purpose: "Count fields in each struct / class (like AS/400 DS field counting)"
+    method: "Manual count field-by-field - NO shortcuts"
+    example: |
+      struct Customer {
+          int    id;          // <- field 1
+          char   name[50];    // <- field 2
+          double balance;     // <- field 3
+      };
+      Total fields: 3 (EXACT count required)
+    note: "Same principle as AS/400 D-spec field counting"
+
+  structure_counts_cpp:
+    classes:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '\bclass\s+\w+\s*[:\{]').Count
+    namespaces:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '\bnamespace\s+\w+\s*\{|\bnamespace\s*\{').Count
+    templates:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*template\s*<').Count
+    extern_c_blocks:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern 'extern\s+"C"\s*\{').Count
+
+  function_counts:
+    note: |
+      Distinguishing definitions from declarations requires care.
+      A definition is followed by '{' (possibly on next line).
+      A declaration ends with ';'.
+    function_definitions_heuristic_powershell: |
+      # Heuristic: lines ending with ')' optionally followed by '{' on same or next line,
+      # NOT followed by ';'. Manual verification required.
+      (Select-String -Path [FILE_PATH] -Pattern '^[A-Za-z_][\w\s\*]*\s+\**[A-Za-z_]\w*\s*\([^;]*\)\s*\{?\s*$').Count
+    function_declarations_heuristic_powershell: |
+      (Select-String -Path [FILE_PATH] -Pattern '^[A-Za-z_][\w\s\*]*\s+\**[A-Za-z_]\w*\s*\([^)]*\)\s*;').Count
+    note_verification: "Heuristic counts MUST be verified manually - NO estimates"
+    equivalent_to_as400: "Like counting RPG Procedures / COBOL Paragraphs exactly"
+
+  modifier_counts:
+    static_functions:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*static\s+').Count
+    inline_functions:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*inline\s+').Count
+    constexpr_items:
+      powershell: |
+        (Select-String -Path [FILE_PATH] -Pattern '^\s*constexpr\s+').Count
+
+# ============================================================================
+# CROSS-REFERENCE VALIDATION
+# Critical: Like AS/400 Copy Member check (proven essential)
+# ============================================================================
+
+cross_reference:
+
+  header_check:
+    purpose: "Identify shared vs unique declarations (like AS/400 Copy Members)"
+    importance: "CRITICAL - equivalent to AS/400 Copy Members / SAP Component Controller"
+
+    process:
+      - step: "Extract all #include directives from main translation unit"
+      - step: "Read each user header file (\"...\" includes)"
+      - step: "For each struct / class / function in main source:"
+        substeps:
+          - "Search for declaration in included headers"
+          - "If found → mark as 'shared from [HEADER_NAME]'"
+          - "If not found → mark as 'local to this translation unit'"
+
+    detection:
+      user_headers_command_powershell: |
+        Select-String -Path [MAIN_SOURCE] -Pattern '^\s*#\s*include\s*"([^"]+)"'
+      system_headers_command_powershell: |
+        Select-String -Path [MAIN_SOURCE] -Pattern '^\s*#\s*include\s*<([^>]+)>'
+
+    marking_format:
+      shared_declaration: |
+        ### 2. Customer (shared from customer.h!)
+        **Location in source**: line 145 (forward use)
+        **Primary definition**: include/customer.h line 23
+        **Note**: Struct/class shared across multiple translation units!
+
+      local_declaration: |
+        ### 3. TempBuffer (local to this translation unit)
+        **Location in source**: lines 178-185
+        **Storage class**: static (file scope only)
+        **Note**: Declaration unique to this source file only
+
+    equivalent_to_as400: |
+      This is EXACTLY like AS/400 Copy Member check:
+      - AS/400: Data structures shared from Copy Members
+      - C/C++: Structs / classes / prototypes shared from Header Files
+
+      AS/400 lesson (from MACCABI): This was missed initially, client feedback required it.
+      ALWAYS check for shared (in header) vs local (static / unnamed) declarations!
+
+  external_symbol_references:
+    purpose: "Identify external functions/variables called or referenced"
+    detection:
+      c: "Calls to functions whose definition is not in this file"
+      cpp: "Same + member function calls on objects of external types"
+
+    powershell_commands:
+      find_extern_declarations: |
+        Select-String -Path [FILE_PATH] -Pattern '^\s*extern\s+'
+
+    validation:
+      - "For each external symbol, check if declared in an included header"
+      - "Mark as external if declared via #include"
+      - "Mark as internal if defined in this translation unit"
+
+# ============================================================================
+# BUSINESS LOGIC EXTRACTION
+# Adapted from AS/400 C-spec extraction
+# ============================================================================
+
+business_logic:
+
+  extraction_sources:
+    c:
+      primary: "Function bodies (between { and matching })"
+      secondary: "main() entry point and call graph"
+
+    cpp:
+      primary: "Member function bodies + free function bodies"
+      secondary: "Constructors / destructors / operator overloads"
+
+  logic_patterns:
+    control_flow:
+      - "if / else if / else (conditions)"
+      - "switch / case / default (multi-way branching)"
+      - "for / while / do-while (loops)"
+      - "goto / labels (rare, flag if found)"
+      - "return (exit points)"
+      - "break / continue (loop control)"
+
+    memory_operations_c:
+      - "malloc / calloc / realloc / free (heap)"
+      - "memcpy / memmove / memset / memcmp (raw memory)"
+      - "Pointer arithmetic"
+
+    memory_operations_cpp:
+      - "new / new[] / delete / delete[] (heap)"
+      - "Smart pointers: std::unique_ptr, std::shared_ptr, std::weak_ptr"
+      - "RAII patterns (constructor acquires, destructor releases)"
+
+    io_operations:
+      c_stdio:
+        - "fopen / fclose / fread / fwrite / fprintf / fscanf"
+        - "printf / scanf (stdin/stdout)"
+      cpp_iostream:
+        - "std::cin / std::cout / std::cerr"
+        - "std::ifstream / std::ofstream"
+
+    function_calls:
+      - "Direct call: name(args)"
+      - "Function pointer call: (*fp)(args)"
+      - "C++ member call: obj.method(args) / ptr->method(args)"
+      - "Static member call: Class::method(args)"
+      - "Virtual dispatch: vtable lookup (flag if relevant)"
+
+    error_handling:
+      c:
+        - "Return code checking (errno, return -1, NULL)"
+        - "setjmp / longjmp (rare)"
+      cpp:
+        - "throw / try / catch (exceptions)"
+        - "noexcept specifications"
+        - "std::error_code patterns"
+
+  documentation_format:
+    careful_language: |
+      USE: "appears to read", "seems to allocate", "according to code"
+      NEVER: "the function reads", "the system allocates"
+
+      Example:
+      "According to the function body, ProcessOrder() appears to:
+      1. Validate input pointer (NULL check, line 234)
+      2. Allocate buffer (malloc call, line 240)
+      3. Copy data into buffer (memcpy, line 248)
+      4. Return status code (return statement, line 260)"
+
+    code_references: |
+      Always include specific line numbers:
+      "Pointer NULL check (line 234)"
+      "Allocation block (lines 240-247)"
+
+    limitations: |
+      Always state what CANNOT be determined:
+      "Cannot determine from code:
+      - Runtime behavior of external library calls (e.g., third_party_lib_init)
+      - Macro expansion results without preprocessor run
+      - Conditional code paths under #ifdef PLATFORM_X (when not analyzed)
+      - Virtual function dispatch targets without runtime type info"
+
+# ============================================================================
+# DOCUMENTATION TEMPLATES
+# Adapted from MACCABI: 7 files per component
+# ============================================================================
+
+documentation_structure:
+
+  required_files_count: 7
+
+  file_01_component_specification:
+    filename: "01_COMPONENT_SPECIFICATION.md"
+    sections:
+      - "Component Details (based on actual code)"
+      - "General Description"
+      - "Include Directives (system + user)"
+      - "Types (structs / unions / enums / classes)"
+      - "Functions / Methods"
+      - "Documentation Limitations"
+
+    format_example: |
+      # Component [COMPONENT_NAME] - [DESCRIPTION]
+
+      ## Component Details (based on actual code)
+      - **Component Name**: [NAME]
+      - **Language**: C / C++ (standard: [C99 / C++17 / ...])
+      - **Code Size**: **[EXACT] lines total**
+      - **Source File**: [PATH/TO/file.cpp]
+
+      ## Include Directives ([COUNT_TOTAL] includes: [COUNT_SYSTEM] system, [COUNT_USER] user)
+
+      ### System includes
+      ```c
+      #include <stdio.h>      // line 5
+      #include <stdlib.h>     // line 6
+      ```
+
+      ### User includes
+      ```c
+      #include "customer.h"   // line 10 - shared header!
+      #include "internal.h"   // line 11
+      ```
+
+      ## Types ([COUNT] types, [COUNT] total fields)
+
+      ### 1. Customer (shared from customer.h!)
+      ```cpp
+      struct Customer {
+          int    id;
+          char   name[50];
+          double balance;
+      };
+      ```
+      **Location in source**: line 145 (used)
+      **Primary definition**: include/customer.h line 23
+      **Total fields**: 3 (counted field-by-field)
+      **Note**: Shared from header customer.h!
+
+      ## Functions / Methods ([COUNT] definitions)
+
+      1. `int ProcessOrder(Order* o)` - Process single order (line 234)
+      2. `static void LogError(const char* msg)` - Internal logger (line 289)
+
+      ## Documentation Limitations
+
+      ### What CANNOT be determined from code:
+      - Runtime macro expansions (without running preprocessor)
+      - Conditional branches under #ifdef PLATFORM_X (not analyzed)
+      - Behavior of external library calls
+      - Virtual function dispatch targets
+
+      ### What IS known from code:
+      - Include directives ([COUNT] includes)
+      - Type definitions ([COUNT] types, [COUNT] fields)
+      - Function definitions ([COUNT] functions)
+      - Control flow within visible function bodies
+
+  file_02_ui_interface:
+    filename: "02_UI_INTERFACE.md"
+    purpose: "Document UI surface if applicable (CLI args, GUI bindings, network endpoints)"
+    note: "Only for components with externally observable surfaces"
+
+  file_03_technical_analysis:
+    filename: "03_TECHNICAL_ANALYSIS.md"
+    purpose: "Detailed technical breakdown"
+    sections:
+      - "Technical characteristics"
+      - "Preprocessor analysis (defines, conditional compilation)"
+      - "Type analysis (all fields listed)"
+      - "Function signature details"
+      - "Memory model notes (heap / stack / static / thread-local)"
+
+  file_04_business_logic:
+    filename: "04_BUSINESS_LOGIC.md"
+    purpose: "Document control flow and rules"
+    extract_from:
+      - "Function bodies"
+      - "Call graph between functions"
+      - "I/O and memory operations"
+
+  file_05_code_artifacts:
+    filename: "05_CODE_ARTIFACTS.md"
+    purpose: "Key code snippets"
+    include:
+      - "Header guard pattern"
+      - "Key type definitions"
+      - "Key function implementations"
+      - "extern \"C\" blocks if any"
+
+  file_06_readme:
+    filename: "README.md"
+    purpose: "Quick overview"
+    sections:
+      - "Component characteristics"
+      - "Include list ([COUNT] includes)"
+      - "Types ([COUNT] types)"
+      - "Functions ([COUNT] functions)"
+      - "Limitations section"
+
+  file_07_validation_report:
+    filename: "validation_report_[COMPONENT_NAME].md"
+    purpose: "Verification against actual code"
+    sections:
+      - "Verification checklist"
+      - "Accuracy confirmation"
+      - "Cross-reference validation (header check)"
+      - "Quality score (target: 100/100)"
+
+# ============================================================================
+# QUALITY CHECKS
+# Proven in MACCABI: 100/100 accuracy requirement
+# ============================================================================
+
+quality_standards:
+
+  forbidden_words:
+    hebrew:
+      - "מתקדם" (advanced)
+      - "חכם" (smart)
+      - "אינטליגנטי" (intelligent)
+      - "מתוחכם" (sophisticated)
+      - "אוטומטי" (automatic - unless provably automated)
+    english:
+      - "advanced"
+      - "smart"
+      - "intelligent"
+      - "sophisticated"
+      - "state-of-the-art"
+
+    detection_command_powershell: |
+      Select-String -Path [DOC_FILES] -Pattern 'advanced|smart|intelligent|sophisticated|מתקדם|חכם'
+
+    action_if_found: "Remove or replace with factual description"
+
+  required_language:
+    careful_phrases:
+      - "appears to" / "נראה ש"
+      - "seems to" / "נראה כי"
+      - "according to code" / "לפי הקוד"
+      - "based on code" / "מבוסס על הקוד"
+
+    forbidden_phrases:
+      - "the function does" (too confident without verification)
+      - "the system performs" (assumes knowledge beyond code)
+      - "will execute" (future tense implies certainty)
+
+    verification: "Scan all documentation for careful language compliance"
+
+  required_sections:
+    limitations_section:
+      required: true
+      format: |
+        ## Documentation Limitations
+
+        ### What CANNOT be determined from code:
+        - [List what's unknown]
+
+        ### What IS known from code:
+        - [List what's verified]
+
+      examples_unknown:
+        - "Macro expansion results (without preprocessor run)"
+        - "Conditional code paths under unanalyzed #ifdef branches"
+        - "External library call behavior"
+        - "Virtual dispatch targets (without runtime info)"
+
+      examples_known:
+        - "Include directives (exact count)"
+        - "Type definitions (exact count with fields)"
+        - "Function definitions (exact count with signatures)"
+        - "Modifier counts (static / inline / constexpr)"
+
+  exact_counting:
+    requirement: "ALL counts must be exact - NO estimates, NO approximations"
+    forbidden:
+      - "approximately"
+      - "around"
+      - "~" (tilde)
+      - "+" (plus sign for estimates)
+      - "several"
+      - "many"
+
+    required:
+      - Exact PowerShell / grep command results
+      - Manual field-by-field counting for structs / classes
+      - Verification after counting
+
+    examples:
+      correct: "12 functions (counted exactly from definitions)"
+      wrong: "~12 functions" or "approximately 12 functions"
+
+  cross_reference_mandatory:
+    header_check:
+      required: true
+      process: "Check EVERY struct / class / prototype against included headers"
+      marking: "Mark as shared (from header) / local (static or unnamed) explicitly"
+
+    external_symbol_check:
+      required: true
+      process: "Identify all external function / variable references"
+      verification: "Check declarations in included headers"
+
+# ============================================================================
+# AUTOMATED VALIDATION
+# Adapted from MACCABI quality gates
+# ============================================================================
+
+automated_checks:
+
+  pre_documentation_checks:
+    - name: "Scan all source / header files"
+      command_powershell: |
+        (Get-ChildItem -Path [ROOT] -Recurse -Include *.c,*.cpp,*.cc,*.cxx,*.h,*.hpp,*.hh,*.hxx).Count
+      verify: "Count matches expected file count"
+
+    - name: "Identify relevant files"
+      command_powershell: |
+        Select-String -Path [ROOT]\**\*.c*,[ROOT]\**\*.h* -Pattern '[COMPONENT_NAME]'
+      verify: "Found main source + headers + related sources"
+
+    - name: "Check user includes"
+      command_powershell: |
+        Select-String -Path [MAIN_SOURCE] -Pattern '^\s*#\s*include\s*"'
+      verify: "All user headers identified for cross-reference"
+
+  post_documentation_checks:
+    - name: "File count verification"
+      check: "Count created documentation files"
+      expected: "Exactly 7 files"
+      command_powershell: "(Get-ChildItem -Path [DOC_DIR] -Filter *.md).Count"
+
+    - name: "Forbidden words scan"
+      check: "Scan for forbidden words"
+      expected: "Zero occurrences"
+      command_powershell: |
+        Select-String -Path [DOC_FILES] -Pattern 'advanced|smart|intelligent|מתקדם|חכם'
+
+    - name: "Careful language verification"
+      check: "Verify careful language usage"
+      command_powershell: |
+        Select-String -Path [DOC_FILES] -Pattern 'appears to|seems to|according to|נראה ש|לפי הקוד'
+      expected: "Multiple occurrences throughout documentation"
+
+    - name: "Exact counting verification"
+      check: "Verify no estimate language"
+      command_powershell: |
+        Select-String -Path [DOC_FILES] -Pattern 'approximately|around|~|several|many'
+      expected: "Zero occurrences"
+
+    - name: "Limitations section check"
+      check: "Verify limitations section exists"
+      command_powershell: |
+        Select-String -Path [SPEC_FILE] -Pattern 'Documentation Limitations|מגבלות תיעוד'
+      expected: "Section found with what is/isn't known"
+
+    - name: "Cross-reference marking check"
+      check: "Verify shared declarations are marked"
+      command_powershell: |
+        Select-String -Path [SPEC_FILE] -Pattern 'shared from|משותף מ'
+      expected: "At least 1 occurrence if user headers used"
+
+    - name: "Line count accuracy"
+      check: "Verify actual line counts match documentation"
+      process:
+        - "Read documented line count from 01_COMPONENT_SPECIFICATION.md"
+        - "Run actual count: (Get-Content [SOURCE]).Count"
+        - "Compare - must match exactly"
+
+  quality_score_calculation:
+    total_points: 100
+
+    deductions:
+      - item: "Forbidden word found"
+        penalty: -5 per word
+
+      - item: "Missing careful language"
+        penalty: -10
+
+      - item: "Estimate instead of exact count"
+        penalty: -15 per estimate
+
+      - item: "Missing limitations section"
+        penalty: -20
+
+      - item: "Cross-reference not checked"
+        penalty: -25
+
+      - item: "File count wrong (not 7 files)"
+        penalty: -30
+
+      - item: "Line count inaccurate"
+        penalty: -40
+
+    passing_score: 100
+    note: "Same as MACCABI - ONLY 100/100 is acceptable"
+
+# ============================================================================
+# STANDARDS AND REFERENCES
+# ============================================================================
+
+standards:
+
+  proven_methodology:
+    source: "MACCABI ICM SAP WebDynpro ABAP Project (via AS/400 plugin)"
+    results:
+      - "9/33 screens documented at 100% accuracy"
+      - "Zero hallucinations across all documentation"
+      - "Client feedback: 'Built very well'"
+      - "18x productivity improvement (18 hours → 1 hour per screen)"
+
+    adapted_for_c_cpp:
+      mapping:
+        - "AS/400 Data Structures → C structs / C++ classes"
+        - "AS/400 Procedures → C functions / C++ member functions"
+        - "AS/400 Copy Members → C/C++ header files (#include)"
+        - "AS/400 Database I/O → C/C++ I/O + memory + external calls"
+        - "AS/400 7 files per program → C/C++ 7 files per component"
+
+  reference_examples:
+    when_available:
+      gold_standard: "First completed C/C++ component (becomes reference)"
+      simple_example: "Single-file C program with minimal headers"
+      complex_example: "Multi-file C++ component with classes, templates, multiple headers"
+
+    structure_to_follow:
+      - "Same as AS/400: careful language throughout"
+      - "Same as AS/400: exact counting only"
+      - "Same as AS/400: cross-reference validation"
+      - "Same as AS/400: mandatory limitations section"
+      - "Same as AS/400: 7 files per component"
+
+# ============================================================================
+# LESSONS FROM MACCABI PROJECT (carried over)
+# ============================================================================
+
+lessons_learned:
+
+  critical_discoveries:
+    - lesson: "Cross-reference check is ESSENTIAL"
+      detail: |
+        In MACCABI: Component Controller check was initially missed.
+        For AS/400: Copy member check was equivalent.
+        For C/C++: Header file check is equivalent - struct / class / prototype
+        defined in a header is SHARED across translation units.
+
+    - lesson: "Count field-by-field, not structure-by-structure"
+      detail: |
+        MACCABI: Counted Context Nodes but missed field counts initially.
+        C/C++: Must count struct/class members individually, not just type count.
+
+    - lesson: "Conditional compilation can hide whole subsystems"
+      detail: |
+        MACCABI: V_DETAIL had 140+ event handlers, initially missed.
+        C/C++: #ifdef branches can hide platform-specific code paths -
+        document which branches were analyzed and which were not.
+
+    - lesson: "Careful language prevents hallucinations"
+      detail: |
+        MACCABI: "appears to" instead of "does" prevented overconfidence.
+        C/C++: Same principle - never claim certainty without verification.
+
+    - lesson: "Limitations section shows honesty"
+      detail: |
+        MACCABI: Stating what's unknown (Types, backend logic) built trust.
+        C/C++: State what's unknown (macro expansions, external libs,
+        unanalyzed #ifdef branches) equally important.
+
+  anti_hallucination_keys:
+    - "Read ALL source / header files before claiming relevance"
+    - "Count exactly using commands, never estimate"
+    - "Check cross-references (headers) always"
+    - "Use careful language consistently"
+    - "Include limitations section in every document"
+    - "Verify after every claim"
+    - "Mark shared (in header) vs local (static / file-scope) explicitly"
+
+# ============================================================================
+# USAGE WORKFLOW
+# ============================================================================
+
+workflow:
+
+  phase_1_analyze:
+    duration: "5 minutes"
+    steps:
+      - "Scan all .c / .cpp / .h / .hpp files in project tree"
+      - "Identify component name references (function / class / type)"
+      - "Find main source + included headers + related sources"
+      - "List relevant files (typical: 3-15 out of 50-500)"
+
+    output: "List of relevant source / header files to document"
+
+  phase_2_count:
+    duration: "5 minutes"
+    steps:
+      - "Count total lines exactly (PowerShell: (Get-Content).Count)"
+      - "Count preprocessor directives (includes / defines / ifdefs) exactly"
+      - "Count types (structs / unions / enums / classes) exactly"
+      - "Count struct / class fields field-by-field"
+      - "Count function definitions exactly (verify heuristic manually)"
+      - "Count modifiers (static / inline / constexpr / extern \"C\")"
+
+    output: "Exact counts for all elements"
+
+  phase_3_cross_reference:
+    duration: "5 minutes"
+    steps:
+      - "Extract all #include directives (system + user)"
+      - "Read each user header"
+      - "Check each type / prototype against headers"
+      - "Mark as shared (with header source) or local"
+      - "Check external symbol references against included headers"
+
+    output: "Shared vs local marking for all declarations"
+
+  phase_4_document:
+    duration: "15 minutes"
+    steps:
+      - "Create 7 documentation files from templates"
+      - "Use careful language throughout"
+      - "Include exact counts (no estimates)"
+      - "Mark shared / local declarations explicitly"
+      - "Add limitations section (note unanalyzed #ifdef branches)"
+      - "Reference specific line numbers"
+
+    output: "7 documentation files completed"
+
+  phase_5_validate:
+    duration: "5 minutes"
+    steps:
+      - "Run automated quality checks"
+      - "Verify forbidden words = 0"
+      - "Verify careful language present"
+      - "Verify limitations section exists"
+      - "Verify cross-references marked"
+      - "Verify exact counts match code"
+      - "Calculate quality score"
+
+    output: "Quality score (target: 100/100)"
+
+  total_time: "~35 minutes per component (same as MACCABI per screen)"
+
+# ============================================================================
+# SUCCESS CRITERIA
+# ============================================================================
+
+success_metrics:
+
+  accuracy:
+    target: "100% code alignment"
+    measure: "Everything documented exists in actual code"
+    verification: "Line number references validate correctly"
+
+  hallucinations:
+    target: "Zero hallucinations"
+    measure: "No invented types, fields, or functions"
+    verification: "All elements traceable to source code"
+
+  completeness:
+    target: "7 files per component"
+    measure: "All required files created"
+    verification: "File count = 7 exactly"
+
+  cross_reference:
+    target: "All shared declarations marked"
+    measure: "Every header reference identified"
+    verification: "grep for 'shared from' finds occurrences"
+
+  language:
+    target: "Careful language throughout"
+    measure: "Uses 'appears to', 'according to code'"
+    verification: "grep finds careful phrases, zero confident claims"
+
+  counting:
+    target: "Exact counts only"
+    measure: "No estimates or approximations"
+    verification: "grep for estimate words = 0 results"
+
+  quality_score:
+    target: "100/100"
+    measure: "Automated quality check score"
+    note: "Same as MACCABI - only 100/100 acceptable"
+
+# ============================================================================
+# PLUGIN METADATA
+# ============================================================================
+
+metadata:
+  created_from: "as400_plugin.yaml"
+  methodology_source: "MACCABI ICM SAP WebDynpro ABAP Project (via AS/400 adaptation)"
+  proven_results: "9 screens at 100% accuracy, 18x productivity"
+  adapted_for: "C and C++ source code (procedural + object-oriented)"
+  languages_supported: "C (C89/C99/C11/C17), C++ (C++98/11/14/17/20)"
+
+  confidence_level: "Medium"
+  confidence_reasoning: |
+    Methodology is proven in SAP and adapted in AS/400 plugin (100% accuracy).
+    Structure mapping is logical:
+      - struct/class → AS/400 Data Structure → SAP Context Node
+      - function/method → AS/400 Procedure → SAP Method
+      - header file → AS/400 Copy Member → SAP Component Controller
+    C/C++ is well-documented with clear lexical patterns.
+
+    Requires validation:
+    - Field testing on real C/C++ codebases (single-file and multi-file)
+    - Heuristic refinement for function definition vs declaration detection
+    - Validation of cross-reference detection for headers
+    - Conditional compilation (#ifdef) coverage tracking
+
+  recommended_first_use:
+    - "Start with single-file C program (minimal includes)"
+    - "Verify counting commands (PowerShell Select-String) work correctly"
+    - "Validate header cross-reference detection"
+    - "Establish reference example (gold standard)"
+    - "Refine plugin based on first results"
+
+  future_enhancements:
+    - "Add embedded SQL detection (e.g., ESQL/C, EXEC SQL)"
+    - "Add multi-line block comment counting (/* ... */)"
+    - "Add macro expansion analysis (run preprocessor in dry mode)"
+    - "Add template instantiation tracking"
+    - "Add virtual function dispatch graph (for C++)"
+    - "Add CMake / Makefile target mapping"
+    - "Add static analysis tool integration (clang-tidy, cppcheck) for cross-validation"

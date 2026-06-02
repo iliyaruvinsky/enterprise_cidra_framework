@@ -467,6 +467,10 @@ internal_skills:
             technology: "React"
           - pattern: "*.py, requirements.txt, pyproject.toml"
             technology: "Python"
+          - pattern: "*.c, *.cpp, *.cc, *.cxx, *.c++, *.h, *.hpp, *.hh, *.hxx"
+            technology: "C/C++"
+          - pattern: "* (any unmatched extension)"
+            technology: "Generic (fallback)"
       - step: 2
         action: "Load appropriate plugin"
         plugins:
@@ -474,6 +478,7 @@ internal_skills:
           - "as400_plugin.yaml"
           - "react_plugin.yaml"
           - "python_plugin.yaml"
+          - "c_cpp_plugin.yaml"
           - "general_plugin.yaml (fallback)"
       - step: 3
         action: "Apply plugin-specific extraction rules"

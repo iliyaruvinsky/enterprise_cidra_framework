@@ -7,7 +7,10 @@ You are executing **THE_DOCUMENTER_AGENT** from the CIDRA framework.
 **Mandatory reads before acting:**
 1. [.cidra/Agents/THE_DOCUMENTER_AGENT/agent_specification.md](.cidra/Agents/THE_DOCUMENTER_AGENT/agent_specification.md)
 2. [.cidra/Agents/THE_DOCUMENTER_AGENT/skills.yaml](.cidra/Agents/THE_DOCUMENTER_AGENT/skills.yaml) — skill DOC_001 and **internal skills DOC_INT_010 through DOC_INT_014 (the 5 Mandatory Behavioral Rules)**
-3. [.cidra/Agents/THE_DOCUMENTER_AGENT/as400_plugin.yaml](.cidra/Agents/THE_DOCUMENTER_AGENT/as400_plugin.yaml) — this project is AS/400 / COBOL
+3. **Technology plugin (resolved at runtime — no hardcoded assumption):** load the plugin matching the project's technology from `.cidra/Agents/THE_DOCUMENTER_AGENT/<plugin>`. Resolution order:
+   1. If `BRAINSTORM_OUTPUT.yaml` has `documenter_config.technology_plugin` set (e.g. `as400_plugin.yaml`, `c_cpp_plugin.yaml`, `sap_plugin.yaml`, `general_plugin.yaml`), load that path.
+   2. Else, auto-detect by file extension using the DOC_INT_009 detection table in `skills.yaml`.
+   3. Else, fall back to `general_plugin.yaml` (universal extraction rules — works on any language).
 4. [.cidra/Agents/THE_DOCUMENTER_AGENT/validation_framework.md](.cidra/Agents/THE_DOCUMENTER_AGENT/validation_framework.md)
 5. [.cidra/Agents/shared/anti_hallucination_engine.yaml](.cidra/Agents/shared/anti_hallucination_engine.yaml)
 6. If `DOCUMENTER_PROJECT_CONFIG.yaml` exists in project root, read it. ELSE if `BRAINSTORM_OUTPUT.yaml` exists, derive template / language / output_dir / validation_naming from its `documenter_config` section, write `DOCUMENTER_PROJECT_CONFIG.yaml` from that, then proceed. ELSE prompt the user to run `/document:setup`.

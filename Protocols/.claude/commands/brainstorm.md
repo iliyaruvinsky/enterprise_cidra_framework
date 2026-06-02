@@ -20,10 +20,21 @@ You are executing **THE_BRAINSTORMER_AGENT** from the CIDRA framework. This is S
 
 **Workflow (5 phases):**
 
-1. **Goal elicitation (BRN_001)** — Ask the 3 pivotal questions. Use AskUserQuestion when appropriate:
+1. **Goal elicitation (BRN_001)** — Ask the 4 pivotal questions. Use AskUserQuestion when appropriate:
    - **למה התיעוד קיים?** (purpose) — modernization · handover · audit · knowledge-preservation · spaghetti-decoding · other
    - **קהל היעד?** (audience) — developer · architect · PM · BA · auditor · vendor (multiple allowed)
    - **כמה זמן?** (timeline) — quick first-pass · iterative weeks · comprehensive months
+   - **Source technology?** — AS/400 (COBOL / RPG / CL) · C / C++ · ABAP / SAP · Python · React/JS · Other
+
+   Map the technology answer to the documenter plugin file under `Agents/THE_DOCUMENTER_AGENT/`:
+   | Answer | Plugin file |
+   |--------|-------------|
+   | AS/400 (COBOL / RPG / CL) | `as400_plugin.yaml` |
+   | C / C++ | `c_cpp_plugin.yaml` |
+   | ABAP / SAP | `sap_plugin.yaml` |
+   | Python · React/JS · Other | `general_plugin.yaml` |
+
+   Persist the chosen plugin path into `BRAINSTORM_OUTPUT.yaml` at `documenter_config.technology_plugin`. This is binding for `/document` — it loads the plugin from that path instead of assuming AS/400.
 
 2. **Audience mapping (BRN_002)** — Convert audience selections into output requirements per the skill's mapping table.
 
