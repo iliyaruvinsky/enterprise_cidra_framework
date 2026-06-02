@@ -2517,9 +2517,14 @@ footer { unicode-bidi: isolate; }
     }
     State.lastFileName = file.name;
     // New file load — drop any previous file-handle so save flows can
-    // either recall (below) or freshly pick. Mtime reset for #3.
+    // either recall (below) or freshly pick. Seed lastFileMtime from the
+    // File object the user picked, so the external-change watcher (#3)
+    // has a real baseline if the user later Saves and a handle materializes.
     State.fileHandle = null;
-    State.lastFileMtime = 0;
+    State.lastFileMtime = file.lastModified || Date.now();
+    // Dismiss any stale external-change banner from a previously-loaded file.
+    Banner.clear('external-change');
+    Banner.clear('external-change-reload-failed');
     // Try to recall a previously-persisted FSA handle for this filename.
     // If recall succeeds, the next "Save decisions" click will use it
     // (with a one-click permission re-grant on first save per session).
@@ -4013,6 +4018,69 @@ footer { unicode-bidi: isolate; }
     });
   }
 
+  // ============================================================================
+  // External-change watcher (Plan upgrade #3).
+  //
+  // When the loaded document is also bound to a FileSystemFileHandle (either
+  // because the user already saved it, or because we recalled the handle
+  // from IDB on file open), fire a lightweight check whenever the tab
+  // returns to visible or the window regains focus. The check compares
+  // handle.getFile().lastModified to State.lastFileMtime; if newer, surface
+  // a Reload / Keep-my-changes banner.
+  //
+  // Event-driven on purpose — no timer polling. Enterprise readers don't
+  // tab away for 5 seconds; they tab away for minutes. visibilitychange +
+  // focus catches every realistic return-to-document moment without idle
+  // CPU cost, and without spamming queryPermission while permission may
+  // have lapsed.
+  // ============================================================================
+
+  function reloadFromHandle() {
+    if (!State.fileHandle) return;
+    State.fileHandle.getFile().then(function (file) {
+      State.lastFileMtime = file.lastModified;
+      return file.text();
+    }).then(function (text) {
+      Banner.clear('external-change');
+      // Update State.lastRawMd via render() — preserves all the existing
+      // rendering pipeline (frontmatter parse, dir, marks, etc.).
+      render(text, State.lastFileName);
+      showToast('Reloaded ' + (State.lastFileName || 'file') + ' from disk');
+    }).catch(function (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[viewer] reloadFromHandle failed:', err);
+      Banner.warning('external-change-reload-failed', [{text:
+        'Reload failed: ' + String(err && err.message || err)}]);
+    });
+  }
+
+  function checkForExternalChange() {
+    if (!State.fileHandle || !hasFsaSupport()) return;
+    Promise.resolve(State.fileHandle.queryPermission({ mode: 'read' }))
+      .then(function (state) {
+        if (state !== 'granted') return; // permission lapsed — stop quietly
+        return State.fileHandle.getFile().then(function (file) {
+          if (file.lastModified > State.lastFileMtime) {
+            // Banner.warning is idempotent on `key` — if already showing,
+            // the existing element is returned unchanged.
+            Banner.warning('external-change', [{bilingual: {
+              en: 'This file changed externally. Reload from disk, or keep your unsaved decisions?',
+              he: 'הקובץ השתנה חיצונית. לטעון מחדש מהדיסק, או לשמור את הסימונים שלא נשמרו?'
+            }}], [
+              { label: 'Reload', onClick: function () { reloadFromHandle(); } },
+              { label: 'Keep my changes', onClick: function () { Banner.clear('external-change'); } }
+            ]);
+          }
+        });
+      })
+      .catch(function (err) {
+        // Most likely: NotAllowedError because permission was revoked mid-session.
+        // No banner — the next Save click will re-prompt naturally.
+        // eslint-disable-next-line no-console
+        console.warn('[viewer] checkForExternalChange skipped:', err && err.message);
+      });
+  }
+
   // "Forget this file" — clears the in-memory handle and the IDB entry,
   // so the next Save click pops the full save-picker dialog again. Useful
   // when the user wants to save to a different file, or when the IDB key
@@ -4600,6 +4668,18 @@ footer { unicode-bidi: isolate; }
       });
     }
 
+    // External-change watcher (#3). Two triggers — both event-driven, no
+    // timer: tab returns to visible, OR the window regains focus. Each
+    // calls checkForExternalChange, which is a no-op unless a
+    // FileSystemFileHandle is bound to the current document and read
+    // permission is still 'granted'. This catches the realistic case
+    // where Iliya re-issues MISSING_INPUTS.md while the customer's tab is
+    // backgrounded; the moment they return, they see a Reload banner.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') checkForExternalChange();
+    });
+    window.addEventListener('focus', checkForExternalChange);
+
     const filePicker = $('filePicker');
     if (filePicker) {
       filePicker.addEventListener('change', function (e) {
@@ -4691,6 +4771,8 @@ footer { unicode-bidi: isolate; }
         Banner.clear('save-no-fsa');
         Banner.clear('save-fallback');
         Banner.clear('save-failed');
+        Banner.clear('external-change');
+        Banner.clear('external-change-reload-failed');
         ExportMenu.refresh();
         if (typeof updateDecisionsCounter === 'function') updateDecisionsCounter();
       });
