@@ -814,6 +814,29 @@ html[data-theme="dark"] .decisions-counter[data-progress="complete"] {
   border-color: #3fb950;
 }
 .decisions-counter[hidden] { display: none; }
+
+/* Inline text-link style button — for low-visual-weight toolbar
+   actions like "Forget save target" that are reachable but should
+   not compete with the primary controls. */
+.link-button {
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  margin: 0;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.link-button:hover { color: var(--fg); }
+.link-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.link-button[hidden] { display: none; }
 .md pre code {
   background: none;
   padding: 0;
@@ -1219,6 +1242,15 @@ footer { unicode-bidi: isolate; }
   <span id="decisionsCounter" class="decisions-counter" role="status"
         aria-live="polite" aria-atomic="true" hidden>0/0</span>
 
+  <!-- "Forget save target" — visible only when a FileSystemFileHandle
+       is persisted for the current document. Click clears the handle
+       from memory + IndexedDB so the next Save reopens the file-picker.
+       Useful when the user wants to save to a different file or when
+       the same filename refers to different files across projects. -->
+  <button id="btnForgetHandle" class="link-button"
+          title="Forget the saved location for this file (next Save will re-prompt for destination)"
+          hidden>Forget save target</button>
+
   <!-- =====================================================================
        Export dropdown (v1.6.0). Replaces the previous five buttons
        (Export .md / .html / .docx / .csv / .xlsx) with a single trigger
@@ -1288,9 +1320,17 @@ footer { unicode-bidi: isolate; }
                 data-export="decisions"
                 aria-describedby="miExportDecisionsReason">
           <span class="menu-item-name">Export decisions</span>
-          <span class="menu-item-desc">Markdown with ☐ → ✓/✗/❓ marks applied</span>
+          <span class="menu-item-desc">Download a marked copy (.md)</span>
         </button>
         <span id="miExportDecisionsReason" class="sr-only" hidden></span>
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miSaveDecisions" class="menu-item"
+                data-export="saveDecisions"
+                aria-describedby="miSaveDecisionsReason">
+          <span class="menu-item-name">Save decisions</span>
+          <span class="menu-item-desc">Overwrite the source .md in place (FSA)</span>
+        </button>
+        <span id="miSaveDecisionsReason" class="sr-only" hidden></span>
       </div>
       <hr role="separator" class="menu-divider" aria-orientation="horizontal">
       <div id="grpExportTab" class="menu-group-label">Tabular formats</div>
@@ -1536,7 +1576,18 @@ footer { unicode-bidi: isolate; }
     // content into a .html file produces a higher-privilege artifact
     // (file:// scheme has more capability than the original sandbox);
     // export handlers consult this and confirm before proceeding.
-    renderedUnsanitized: false
+    renderedUnsanitized: false,
+
+    // File System Access save-back state. fileHandle is set when the
+    // user has granted write access for the current file (either via
+    // showSaveFilePicker on first save, OR recalled from IndexedDB on
+    // subsequent sessions). Null when no handle exists or the browser
+    // lacks FSA support. The "Save decisions" button is gated on this.
+    fileHandle: null,
+    // Last-known mtime of the file behind fileHandle. Used by the
+    // external-change notification (planned upgrade #3) — populated
+    // here so the IDB recall path can seed it.
+    lastFileMtime: 0
   };
 
   // ---------------------------------------------------------------------------
@@ -2465,6 +2516,22 @@ footer { unicode-bidi: isolate; }
       showWarn('File larger than 5 MB may render slowly.');
     }
     State.lastFileName = file.name;
+    // New file load — drop any previous file-handle so save flows can
+    // either recall (below) or freshly pick. Mtime reset for #3.
+    State.fileHandle = null;
+    State.lastFileMtime = 0;
+    // Try to recall a previously-persisted FSA handle for this filename.
+    // If recall succeeds, the next "Save decisions" click will use it
+    // (with a one-click permission re-grant on first save per session).
+    // Failure is silent — Save still works, just opens the file-picker.
+    if (hasFsaSupport()) {
+      recallHandle(file.name).then(function (handle) {
+        if (handle && State.lastFileName === file.name) {
+          State.fileHandle = handle;
+          if (typeof refreshExportButtons === 'function') refreshExportButtons();
+        }
+      });
+    }
     const reader = new FileReader();
     reader.onload = function(e) {
       const decoded = decodeBuffer(e.target.result);
@@ -2662,12 +2729,13 @@ footer { unicode-bidi: isolate; }
     // The exportMarkdown / exportHtml / exportDocx / exportCsv / exportXlsx
     // functions are unchanged; the menu only changes the event source.
     const handlerMap = {
-      md:        function () { return exportMarkdown(); },
-      html:      function () { return exportHtml(); },
-      docx:      function () { return exportDocx(); },
-      decisions: function () { return exportDecisions(); },
-      csv:       function () { return exportCsv(); },
-      xlsx:      function () { return exportXlsx(); },
+      md:            function () { return exportMarkdown(); },
+      html:          function () { return exportHtml(); },
+      docx:          function () { return exportDocx(); },
+      decisions:     function () { return exportDecisions(); },
+      saveDecisions: function () { return saveDecisionsToFile(); },
+      csv:           function () { return exportCsv(); },
+      xlsx:          function () { return exportXlsx(); },
     };
 
     function $id(id) { return document.getElementById(id); }
@@ -3052,6 +3120,37 @@ footer { unicode-bidi: isolate; }
       else                 decTip = 'Download the source markdown with your ☐ → ✓/✗/❓ clicks applied (' + markCount + ' mark' + (markCount === 1 ? '' : 's') + ' total).';
       setItem('miExportDecisions', hasDoc && markCount > 0 && !busy, decTip,
           (hasDoc && markCount > 0) ? null : 'Disabled: ' + decTip);
+
+      // Save decisions (FSA direct save-back). Requires:
+      //   - browser support for showSaveFilePicker + indexedDB
+      //   - a loaded document with at least one decision mark
+      // First click opens the save-picker; subsequent clicks reuse the
+      // persisted handle (one-click permission grant after a reload).
+      const fsaOk = hasFsaSupport();
+      let saveTip, saveReason = null;
+      if (!hasDoc) {
+        saveTip = 'Load a document first.';
+        saveReason = 'Disabled: load a document first.';
+      } else if (!fsaOk) {
+        saveTip = 'Direct save unavailable on this browser. Use Export decisions instead.';
+        saveReason = 'Disabled: browser lacks File System Access support.';
+      } else if (!markCount) {
+        saveTip = 'Document has no decision marks to save.';
+        saveReason = 'Disabled: document has no decision marks.';
+      } else if (State.fileHandle) {
+        saveTip = 'Save changes to the source .md (one-click permission grant after page reload).';
+      } else {
+        saveTip = 'Pick a destination once; subsequent saves are silent.';
+      }
+      setItem('miSaveDecisions', hasDoc && fsaOk && markCount > 0 && !busy, saveTip, saveReason);
+
+      // "Forget save target" — visible only when a handle is bound to
+      // the current document. Lives outside the export menu (toolbar
+      // affordance) so the user can clear without opening the dropdown.
+      const btnForget = document.getElementById('btnForgetHandle');
+      if (btnForget) {
+        btnForget.hidden = !(hasDoc && fsaOk && State.fileHandle);
+      }
 
       setItem('miExportHtml', hasDoc && !busy,
           hasDoc ? 'Export current document as self-contained .html' : 'Load a document first.',
@@ -3709,6 +3808,224 @@ footer { unicode-bidi: isolate; }
     }
   }
 
+  // ============================================================================
+  // File System Access save-back (Plan upgrade #1).
+  //
+  // "Save decisions" writes the current .cidra-mark states directly back to
+  // the source .md file on disk, eliminating the Export → email → manual
+  // merge friction. First save in a session calls showSaveFilePicker so the
+  // user picks the destination (typically overwrites the source). The
+  // resulting FileSystemFileHandle is persisted in IndexedDB keyed by
+  // filename so subsequent sessions skip the full file-picker dialog and
+  // only need a one-click permission grant.
+  //
+  // Browser without FSA support → the Save button is hidden by
+  // refreshExportButtons; Export decisions remains the primary path.
+  // Permission denied / FSA failure → fall back to triggerDownload with
+  // a warning banner explaining what happened.
+  //
+  // KNOWN v1 limitation: IDB key is just the filename. If a user opens
+  // two MISSING_INPUTS.md files from different projects, the stale handle
+  // would be used. The "Forget this file" affordance lets the user clear
+  // the persisted handle and re-pick.
+  // ============================================================================
+
+  const CIDRA_IDB_NAME  = 'cidra-viewer';
+  const CIDRA_IDB_STORE = 'file-handles';
+  const CIDRA_IDB_VERSION = 1;
+
+  function hasFsaSupport() {
+    return typeof window.showSaveFilePicker === 'function'
+        && typeof window.indexedDB !== 'undefined';
+  }
+
+  // Promise wrapper around indexedDB.open with the schema we need.
+  function openCidraIdb() {
+    return new Promise(function (resolve, reject) {
+      try {
+        const req = window.indexedDB.open(CIDRA_IDB_NAME, CIDRA_IDB_VERSION);
+        req.onupgradeneeded = function () {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(CIDRA_IDB_STORE)) {
+            db.createObjectStore(CIDRA_IDB_STORE);
+          }
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error || new Error('IDB open failed')); };
+      } catch (err) { reject(err); }
+    });
+  }
+
+  // Persist a FileSystemFileHandle keyed by filename. Handles are
+  // structured-clone-able since Chrome 86, so we can store them directly.
+  function persistHandle(filename, handle) {
+    if (!filename || !handle) return Promise.resolve();
+    return openCidraIdb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction(CIDRA_IDB_STORE, 'readwrite');
+        const store = tx.objectStore(CIDRA_IDB_STORE);
+        const req = store.put({ handle: handle, savedAt: Date.now() }, filename);
+        req.onsuccess = function () { resolve(); };
+        req.onerror = function () { reject(req.error); };
+      });
+    }).catch(function (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[viewer] IDB persistHandle failed:', err);
+    });
+  }
+
+  function recallHandle(filename) {
+    if (!filename) return Promise.resolve(null);
+    return openCidraIdb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction(CIDRA_IDB_STORE, 'readonly');
+        const store = tx.objectStore(CIDRA_IDB_STORE);
+        const req = store.get(filename);
+        req.onsuccess = function () {
+          resolve(req.result ? req.result.handle : null);
+        };
+        req.onerror = function () { reject(req.error); };
+      });
+    }).catch(function (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[viewer] IDB recallHandle failed:', err);
+      return null;
+    });
+  }
+
+  function forgetHandle(filename) {
+    if (!filename) return Promise.resolve();
+    return openCidraIdb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction(CIDRA_IDB_STORE, 'readwrite');
+        const store = tx.objectStore(CIDRA_IDB_STORE);
+        const req = store.delete(filename);
+        req.onsuccess = function () { resolve(); };
+        req.onerror = function () { reject(req.error); };
+      });
+    }).catch(function (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[viewer] IDB forgetHandle failed:', err);
+    });
+  }
+
+  // Ensure we have write permission. Returns 'granted' on success,
+  // throws / returns 'denied' on rejection.
+  function ensureWritePermission(handle) {
+    if (!handle) return Promise.resolve('denied');
+    return handle.queryPermission({ mode: 'readwrite' }).then(function (state) {
+      if (state === 'granted') return 'granted';
+      return handle.requestPermission({ mode: 'readwrite' });
+    });
+  }
+
+  // Write content to the handle via createWritable. Returns the new mtime
+  // so callers (and the planned #3 change-watcher) can seed
+  // State.lastFileMtime.
+  function writeToHandle(handle, content) {
+    return handle.createWritable().then(function (writable) {
+      return writable.write(content).then(function () {
+        return writable.close();
+      });
+    }).then(function () {
+      return handle.getFile().then(function (f) { return f.lastModified; });
+    });
+  }
+
+  // Main entry point — dispatched from the export menu's "Save decisions"
+  // item. Implements the full first-save / repeat-save / fallback flow.
+  function saveDecisionsToFile() {
+    if (!beginExport()) return;
+    let fellBackBlobUrl = null;
+    const md = State.lastRawMd;
+    const filename = State.lastFileName;
+    if (md == null || !md.trim() || !filename) {
+      Banner.warning('save-empty', [{text: 'Nothing to save — load a document first.'}]);
+      endExport(null);
+      return;
+    }
+    if (!hasFsaSupport()) {
+      Banner.warning('save-no-fsa', [{bilingual: {
+        en: 'Direct save unavailable on this browser. Use Export decisions to download a marked copy.',
+        he: 'שמירה ישירה לא נתמכת בדפדפן הזה. השתמש בייצוא ההחלטות להורדת עותק מסומן.'
+      }}]);
+      endExport(null);
+      return;
+    }
+    const out = document.getElementById('output');
+    const marked = exportDecisionsMd(md, out);
+
+    const total = (out.querySelectorAll('.cidra-mark') || []).length;
+    const acted = Array.prototype.filter.call(
+      out.querySelectorAll('.cidra-mark'),
+      function (s) { return (s.getAttribute('data-state') || '☐') !== '☐'; }
+    ).length;
+
+    // First-save-in-session: no handle. Open the save picker.
+    // Subsequent save: use State.fileHandle. Permission may be 'prompt'
+    // after a reload — the request dialog is one click for the user.
+    const getHandle = State.fileHandle
+      ? Promise.resolve(State.fileHandle)
+      : window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'Markdown',
+            accept: { 'text/markdown': ['.md', '.markdown', '.txt'] }
+          }]
+        });
+
+    getHandle.then(function (handle) {
+      State.fileHandle = handle;
+      return ensureWritePermission(handle).then(function (state) {
+        if (state !== 'granted') {
+          throw new Error('Write permission denied by user');
+        }
+        return writeToHandle(handle, marked);
+      }).then(function (mtime) {
+        State.lastFileMtime = mtime;
+        return persistHandle(filename, handle);
+      }).then(function () {
+        showToast('Saved ' + filename + ' (' + acted + ' of ' + total + ' marked)');
+        // Surface that the file has been written so the upcoming change-
+        // watcher (#3) doesn't immediately treat the user's own write
+        // as an "external change".
+        if (typeof refreshExportButtons === 'function') refreshExportButtons();
+      });
+    }).catch(function (err) {
+      // User cancelled the picker, denied permission, or filesystem failed.
+      // AbortError is the cancel case — no banner, just silently bow out.
+      if (err && err.name === 'AbortError') return;
+      // Otherwise: fall back to download and explain.
+      try {
+        const blob = new Blob([marked], {type: 'text/markdown;charset=utf-8'});
+        let basename = filename.replace(/\.(md|markdown|txt)$/i, '');
+        const dlname = buildExportFilename(basename + '_decisions.md', 'md');
+        fellBackBlobUrl = triggerDownload(blob, dlname);
+        Banner.warning('save-fallback', [{text:
+          'Direct save failed (' + (err && err.message || 'unknown') +
+          ') — downloaded ' + dlname + ' instead.'}]);
+      } catch (dlErr) {
+        Banner.error('save-failed', [{text:
+          'Save failed: ' + String(err && err.message || err)}]);
+      }
+    }).finally(function () {
+      endExport(fellBackBlobUrl);
+    });
+  }
+
+  // "Forget this file" — clears the in-memory handle and the IDB entry,
+  // so the next Save click pops the full save-picker dialog again. Useful
+  // when the user wants to save to a different file, or when the IDB key
+  // collision (same filename across projects) needs to be reset.
+  function forgetCurrentFileHandle() {
+    const filename = State.lastFileName;
+    State.fileHandle = null;
+    forgetHandle(filename).then(function () {
+      showToast('Forgot save target for ' + (filename || 'this file'));
+      if (typeof refreshExportButtons === 'function') refreshExportButtons();
+    });
+  }
+
   function exportHtml() {
     if (!beginExport()) return;
     let blobUrl = null;
@@ -4343,6 +4660,13 @@ footer { unicode-bidi: isolate; }
       });
     }
 
+    const btnForgetHandle = $('btnForgetHandle');
+    if (btnForgetHandle) {
+      btnForgetHandle.addEventListener('click', function () {
+        forgetCurrentFileHandle();
+      });
+    }
+
     const btnClear = $('btnClear');
     if (btnClear) {
       btnClear.addEventListener('click', function () {
@@ -4359,8 +4683,14 @@ footer { unicode-bidi: isolate; }
         State.lastFileName = null;
         State.allowUnsanitizedFor = null;
         State.renderedUnsanitized = false;
+        State.fileHandle = null;
+        State.lastFileMtime = 0;
         Banner.clear('unsanitized-mode');
         Banner.clear('unsanitized-mode-active');
+        Banner.clear('save-empty');
+        Banner.clear('save-no-fsa');
+        Banner.clear('save-fallback');
+        Banner.clear('save-failed');
         ExportMenu.refresh();
         if (typeof updateDecisionsCounter === 'function') updateDecisionsCounter();
       });
