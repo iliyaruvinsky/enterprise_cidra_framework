@@ -149,10 +149,11 @@ user_invoked_skills:
         description: "Save all outputs to disk"
 
     outputs:
-      - "CHUNKS/index.json"
-      - "CHUNKS/relationships.json"
+      - "CHUNKS/repository.json"
+      - "CHUNKS/graph.json"
+      - "CHUNKS/analysis.json"
       - "CHUNKS/DOCUMENTER_INSTRUCTIONS.md"
-      - "CHUNKS/chunks/*.json"
+      - "CHUNKS/run_manifest.json"
 
   - skill_id: "CHUNK_002"
     name: "chunk:analyze"
@@ -362,11 +363,11 @@ internal_skills:
     description: "Create searchable index of all chunks"
 
     index_structure:
-      master_index: "index.json"
+      master_index: "repository.json"
       by_language: "by_language/"
       by_complexity: "by_complexity/"
       by_tag: "by_tag/"
-      relationships: "relationships.json"
+      relationships: "graph.json"
 
 ---
 

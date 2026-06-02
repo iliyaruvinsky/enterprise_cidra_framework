@@ -561,6 +561,34 @@ local file you placed in `./vendor/`. Treat that folder as a
 write-controlled location — anyone who can write to it can change what
 the viewer renders.
 
+### `vendor/html-docx.min.js` is committed to the repo
+
+Of the six libraries above, **`html-docx.min.js` is the only one
+checked into the repository at `Protocols/viewer/vendor/`**. The other
+five (`marked`, `purify`, `highlight`, `exceljs`, `jszip`) ship a
+stable pre-minified bundle in their npm package, so the jsDelivr URL
+serves byte-identical content on every request and the SRI hash on
+the live-CDN `<script>` tag in `viewer.html` is a durable pin.
+
+`html-docx-js@0.3.1`, by contrast, ships **no pre-built `.min.js`** in
+its npm package — only `dist/html-docx.js` (unminified). When you
+request `/npm/html-docx-js@0.3.1/dist/html-docx.min.js`, jsDelivr
+**dynamically minifies the unminified source with Terser at request
+time** and serves the result. Terser's output is not byte-stable across
+its own version bumps (it currently identifies itself in the banner as
+`Minified by jsDelivr using Terser v5.39.0`; when jsDelivr upgrades
+Terser, the bytes change and the previously-pinned SRI hash starts
+failing the integrity check in every browser that loads the viewer).
+
+Vendoring the file locally is the durable fix:
+`attemptVendorFallback()` in `viewer.html` (search for the function
+near the script-error handler) detects the SRI mismatch, falls back
+to `./vendor/html-docx.min.js`, and `.docx` export keeps working
+without an emergency hash bump. Do not delete this file when
+trimming the repo. The vendored copy is the captured Terser output
+from the date it was downloaded; reproducing the exact bytes from
+jsDelivr later is not guaranteed.
+
 ### Content-Security-Policy
 
 The viewer ships an inline `<meta http-equiv="Content-Security-Policy">`

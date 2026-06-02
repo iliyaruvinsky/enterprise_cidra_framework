@@ -1,3 +1,8 @@
+---
+dir: ltr
+documentation_language: english
+---
+
 # B+CIDRA — The Process, End to End
 
 > **From legacy source code to a documented, modernized, or rewritten system.**
@@ -16,6 +21,27 @@ B+CIDRA is a six-stage pipeline. You start with raw legacy code; you exit at one
 | 📕 Run the full pipeline | **B+CIDRA** | Documentation + new generated codebase | + days–weeks |
 
 The first two are **live today.** The last one (I + A) is **on the roadmap**; the framework is architected end-to-end so the data contract from D to R to I to A is already specified.
+
+---
+
+## What the letters stand for
+
+The acronym reads in **pipeline order**, not alphabetic order. Each letter is the first letter of one agent's name:
+
+> **B**rainstormer → **C**hunker → **I**nterpreter → **D**ocumenter → **R**ecommender → **A**pplicator
+
+| Letter | Agent | Stage | Status |
+|:---:|:---|:---:|:---:|
+| **B** | **B**rainstormer | 0 | 🟢 Live |
+| **C** | **C**hunker | 1 | 🟢 Live |
+| **D** | **D**ocumenter | 2 | 🟢 Live |
+| **R** | **R**ecommender | 3 | 🟢 Live |
+| **I** | **I**nterpreter | 4 | 🟣 Planned |
+| **A** | **A**pplicator | 5 | 🟣 Planned |
+
+**A is the LAST stage, not the first.** The original framework was named **CIDRA** (the five core agents C-I-D-R-A); we prepended **B**rainstormer to force goal elicitation before any technical work, making it **B+CIDRA**.
+
+Note that the **acronym letter order** (B-C-I-D-R-A) does not match the **pipeline execution order** (B → C → D → R → I → A). The acronym preserves the original CIDRA naming; the execution order is what the agents actually do when you run them. If you're navigating the diagrams in this document, trust the diagram order — that's the order things run.
 
 ---
 
@@ -61,6 +87,18 @@ Three modes. The mode is a strategic choice made by the customer (with you facil
 
 ### 📘 Mode 1 — Documentation (B+CID)
 
+```mermaid
+flowchart LR
+    SC[("Source<br/>Code")]:::src --> B["<b>B</b><br/>Brainstormer"]:::on
+    B --> C["<b>C</b><br/>Chunker"]:::on
+    C --> D["<b>D</b><br/>Documenter"]:::on
+    D --> OUT["📘<br/><b>Documentation</b><br/><i>B+CID</i>"]:::dlv
+
+    classDef src fill:#21262d,stroke:#444c56,color:#fff
+    classDef on  fill:#1f6feb,stroke:#0a3069,color:#fff,font-weight:bold
+    classDef dlv fill:#cfe9ff,stroke:#1f6feb,color:#0d1117,stroke-width:3px
+```
+
 ```
 Source ──► [B] ──► [C] ──► [D] ──► 📘 Docs
 ```
@@ -81,6 +119,19 @@ Source ──► [B] ──► [C] ──► [D] ──► 📘 Docs
 
 ### 📗 Mode 2 — Documentation + Modernization Plan (B+CIDR)
 
+```mermaid
+flowchart LR
+    SC[("Source<br/>Code")]:::src --> B["<b>B</b><br/>Brainstormer"]:::on
+    B --> C["<b>C</b><br/>Chunker"]:::on
+    C --> D["<b>D</b><br/>Documenter"]:::on
+    D --> R["<b>R</b><br/>Recommender"]:::on
+    R --> OUT["📗<br/><b>Docs + Roadmap</b><br/><i>B+CIDR</i>"]:::dlv
+
+    classDef src fill:#21262d,stroke:#444c56,color:#fff
+    classDef on  fill:#1a7f37,stroke:#0c4a1c,color:#fff,font-weight:bold
+    classDef dlv fill:#cfecda,stroke:#1a7f37,color:#0d1117,stroke-width:3px
+```
+
 ```
 Source ──► [B] ──► [C] ──► [D] ──► [R] ──► 📗 Docs + Roadmap
 ```
@@ -100,6 +151,22 @@ Source ──► [B] ──► [C] ──► [D] ──► [R] ──► 📗 Do
 ---
 
 ### 📕 Mode 3 — End-to-End Migration (B+CIDRA)
+
+```mermaid
+flowchart LR
+    SC[("Source<br/>Code")]:::src --> B["<b>B</b><br/>Brainstormer"]:::on
+    B --> C["<b>C</b><br/>Chunker"]:::on
+    C --> D["<b>D</b><br/>Documenter"]:::on
+    D --> R["<b>R</b><br/>Recommender"]:::on
+    R --> I["<b>I</b><br/>Interpreter<br/><i>planned</i>"]:::pln
+    I --> A["<b>A</b><br/>Applicator<br/><i>planned</i>"]:::pln
+    A --> OUT["📕<br/><b>New Codebase</b><br/><i>B+CIDRA</i>"]:::dlv
+
+    classDef src fill:#21262d,stroke:#444c56,color:#fff
+    classDef on  fill:#cf222e,stroke:#67060c,color:#fff,font-weight:bold
+    classDef pln fill:#7e57c2,stroke:#4a3680,color:#fff,font-weight:bold,stroke-dasharray:5 5
+    classDef dlv fill:#ffd6cc,stroke:#cf222e,color:#0d1117,stroke-width:3px
+```
 
 ```
 Source ──► [B] ──► [C] ──► [D] ──► [R] ──► [I] ──► [A] ──► 📕 New Codebase

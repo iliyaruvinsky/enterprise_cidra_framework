@@ -65,6 +65,12 @@ user_invoked_skills:
       - step: 1
         action: "check_project_setup"
         description: "Check if /document:setup was run"
+        fallback_chain:
+          - if: "DOCUMENTER_PROJECT_CONFIG.yaml exists in project root"
+            then: "read it and proceed"
+          - elif: "BRAINSTORM_OUTPUT.yaml exists in project root"
+            then: "derive template / language / output_dir / validation_naming from its documenter_directives section, write DOCUMENTER_PROJECT_CONFIG.yaml from that, then proceed"
+          - else: "invoke /document:setup first"
         on_missing: "invoke /document:setup first"
       - step: 2
         action: "read_chunker_prompt"
@@ -266,7 +272,9 @@ internal_skills:
     type: "internal"
     description: "Read and interpret Chunker's instructive prompt"
 
-    reads: "CHUNKS/DOCUMENTER_INSTRUCTIONS.md"
+    reads:
+      - "CHUNKS/DOCUMENTER_INSTRUCTIONS.md"
+      - "BRAINSTORM_OUTPUT.yaml"  # Stage 0 output, if present at project root
 
     extracts:
       - where_to_look: "Chunk directory, file locations"

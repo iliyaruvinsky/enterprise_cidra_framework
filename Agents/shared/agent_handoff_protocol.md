@@ -2,7 +2,7 @@
 
 **Version**: 1.0.0
 **Purpose**: Define deterministic file-based communication between CIDRA agents
-**Scope**: Chunker → Documenter → Recommender pipeline
+**Scope**: Brainstormer → Chunker → Documenter → Recommender pipeline
 
 ---
 
@@ -15,23 +15,23 @@ CIDRA agents communicate through **deterministic files** with stable names and l
 ## Pipeline Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        CIDRA Pipeline                                │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│   Stage 0              Stage 1                 Stage 2               │
-│   ┌─────────────┐     ┌─────────────┐        ┌─────────────┐        │
-│   │  CHUNKER    │────▶│ DOCUMENTER  │───────▶│ RECOMMENDER │        │
-│   └─────────────┘     └─────────────┘        └─────────────┘        │
-│         │                    │                      │                │
-│         ▼                    ▼                      ▼                │
-│   CHUNKS/             Screens/<COMP>/       RECOMMENDATIONS/        │
-│   repository.json     01_SPECIFICATION.md   RECOMMENDATION_REPORT    │
-│   graph.json          02_UI_MOCKUP.md       recommendation.json     │
-│   DOCUMENTER_         03_TECHNICAL.md       run_manifest.json       │
-│   INSTRUCTIONS.md     ...                                           │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                  CIDRA Pipeline                                      │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                       │
+│   Stage 0             Stage 1             Stage 2                Stage 3             │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        ┌─────────────┐      │
+│   │BRAINSTORMER │───▶│  CHUNKER    │───▶│ DOCUMENTER  │───────▶│ RECOMMENDER │      │
+│   └─────────────┘    └─────────────┘    └─────────────┘        └─────────────┘      │
+│         │                   │                  │                      │              │
+│         ▼                   ▼                  ▼                      ▼              │
+│   BRAINSTORM_         CHUNKS/            Screens/<COMP>/       RECOMMENDATIONS/      │
+│   OUTPUT.yaml         repository.json    01_SPECIFICATION.md   RECOMMENDATION_REPORT │
+│                       graph.json         02_UI_MOCKUP.md       recommendation.json   │
+│                       DOCUMENTER_        03_TECHNICAL.md       run_manifest.json     │
+│                       INSTRUCTIONS.md    ...                                         │
+│                                                                                       │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -47,6 +47,20 @@ CIDRA agents communicate through **deterministic files** with stable names and l
 ---
 
 ## Handoff Artifacts
+
+### Brainstormer → Chunker
+
+**Output Location**: project root
+
+**Required Files**:
+
+| File | Purpose | Format |
+|------|---------|--------|
+| `BRAINSTORM_OUTPUT.yaml` | Stage 0 blueprint: goals, scope, chunking_strategy hints, documenter_directives | YAML |
+
+This artifact is **optional** for downstream agents — they fall back to defaults when it is absent — but when present, the Chunker honors its `chunking_strategy` and the Documenter derives project config from its `documenter_directives` section (see DOC_001 step 1).
+
+---
 
 ### Chunker → Documenter
 
