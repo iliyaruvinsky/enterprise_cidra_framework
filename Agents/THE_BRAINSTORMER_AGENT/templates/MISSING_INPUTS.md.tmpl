@@ -1,3 +1,7 @@
+---
+documentation_language: [LANG_CODE]
+---
+
 # MISSING_INPUTS.md
 
 > Produced by **THE_BRAINSTORMER_AGENT** at checkpoint **[CHECKPOINT_NAME]**.
@@ -10,36 +14,53 @@
 
 ---
 
+## At-a-glance status
+
+| # | Item | Severity | Status |
+|:---:|:---|:---:|:---:|
+| 1 | [item name] | 🔴 critical | ☐ |
+| 2 | [item name] | 🔴 critical | ☐ |
+| N | [item name] | 🟡 high | ☐ |
+| N | [item name] | 🟢 medium | ☐ |
+
+Status legend: ☐ awaiting · ✓ will provide · ✗ won't / can't (acknowledged risk) · ? checking with team.
+
+---
+
 ## 🔴 CRITICAL — blocks "perfect" documentation
 
 Items in this section, if unfilled, prevent the documentation from reaching the agreed quality threshold. The CIDRA framework will explicitly note these gaps in every output file's Limitations section.
 
-```
-☐  1. [item name]
-       Why critical: [explanation]
-       Without this we cannot: [specific limitation]
+### 1. [item name]
 
-☐  2. ...
-```
+- **Status:** ☐ awaiting customer mark
+- **Why critical:** [explanation]
+- **Without this we cannot:** [specific limitation]
+
+### 2. [item name]
+
+- **Status:** ☐ awaiting customer mark
+- **Why critical:** [explanation]
+- **Without this we cannot:** [specific limitation]
 
 ---
 
 ## 🟡 HIGH — significantly improves quality
 
-```
-☐  N. [item name]
-       Why high-value: [explanation]
-       With this we could additionally: [enhancement]
-```
+### N. [item name]
+
+- **Status:** ☐ awaiting customer mark
+- **Why high-value:** [explanation]
+- **With this we could additionally:** [enhancement]
 
 ---
 
 ## 🟢 MEDIUM — adds context
 
-```
-☐  N. [item name]
-       Adds: [context/color]
-```
+### N. [item name]
+
+- **Status:** ☐ awaiting customer mark
+- **Adds:** [context / color]
 
 ---
 
@@ -47,22 +68,22 @@ Items in this section, if unfilled, prevent the documentation from reaching the 
 
 Items the customer explicitly confirmed will NOT be provided. Documentation proceeds with these gaps recorded as risk:
 
-```
-✗  N. [item name]
-       Customer reason: "..."
-       Documentation note: explicit Limitations section entry
-```
+### N. [item name]
+
+- **Status:** ✗ acknowledged not available
+- **Customer reason:** "..."
+- **Documentation note:** explicit Limitations section entry in every relevant output file
 
 ---
 
 ## How to respond
 
-For each unchecked item above:
-- **✓** = "I'll provide it"
-- **✗** = "We can't / won't provide it" (acknowledged risk)
-- **?** = "Need to investigate — checking with team"
+For each item above, edit the **Status** line:
+- **✓** — "I'll provide it"
+- **✗** — "We can't / won't provide it" (acknowledged risk)
+- **?** — "Need to investigate — checking with team"
 
-Return this file with marks. Items left unmarked are treated as **?** and re-surfaced at the next checkpoint.
+Update the **At-a-glance status** table at the top to match. Items left as ☐ are treated as **?** and re-surfaced at the next checkpoint.
 
 ---
 
@@ -75,5 +96,14 @@ Return this file with marks. Items left unmarked are treated as **?** and re-sur
 | 3 of 3 — post-validation | — | (not yet issued) |
 
 ---
+
+## Authoring note for THE_BRAINSTORMER_AGENT
+
+When emitting this file:
+
+1. **Use Markdown headings (`### N. ...`) and bulleted lists for each item — never code fences (```\`\`\`...\`\`\`\` `).** Code fences render as monospace LTR `<pre>` blocks and fight RTL document direction. Markdown lists inherit the document's natural direction and render correctly in every viewer.
+2. Always emit the `documentation_language` frontmatter (he / en / he-en) so the viewer can apply the right direction policy.
+3. Keep section headings as `##` (one block per severity). Items as `###` (one block per item).
+4. Status, "Why critical / high-value", and consequence/enhancement bullets in that order so a customer scanning the file gets the gist before details.
 
 *BRN_005 (continuous_gap_check) — CRITICAL skill of THE_BRAINSTORMER_AGENT — enforces this refresh schedule.*
