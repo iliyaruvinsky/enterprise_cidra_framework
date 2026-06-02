@@ -25,7 +25,7 @@ The `git pull` is **not optional** — framework updates ship daily during the e
 
 If the bootstrap exits clean through step 9, open Cursor at the new project folder and continue from **Step 2** (`/brainstorm`).
 
-If it fails at step 7 with `ERROR: CIDRA already installed`, that's a known first-bootstrap quirk — append `-ForceFramework` and re-run. (Cause: the source-copy sentinel lives under `.cidra/_bootstrap/`, which makes `install.ps1`'s "directory exists" check fire before it has actually run. Will be patched out; the flag is the right unblock today.)
+If it fails at step 7 with `ERROR: CIDRA already installed`: historical first-bootstrap quirk, fixed by the sentinel relocation to `.cidra-bootstrap/` (sibling of `.cidra/`). With current `bootstrap.ps1` you won't see this. If you're on an older framework checkout, append `-ForceFramework` and re-run; the legacy `.cidra/_bootstrap/` sentinel is migrated automatically on next bootstrap.
 
 For first-time-on-this-machine, read the full Step 1 below.
 
@@ -175,8 +175,10 @@ Optional flags:
 
 ```
 C:\projects\rk1_pharmacy\
-├── .cidra\Agents\                  # framework files
-│   └── _bootstrap\                 # bootstrap state sentinels (do not edit)
+├── .cidra-bootstrap\               # bootstrap state sentinels (new location, post-F7)
+├── .cidra\                         # framework files
+│   ├── Agents\                     # agent specifications
+│   └── _bootstrap\                 # bootstrap state sentinels (legacy location, pre-F7)
 ├── .claude\commands\               # 14 slash command templates (.md)
 ├── .cursorrules                    # IDE integration
 ├── .vscode\cidra-settings.json     # IDE integration
@@ -425,7 +427,7 @@ Optionally write a Hebrew/English cover letter alongside — see the Maccabi RK1
 | `bootstrap.ps1`: "Framework checkout cannot be fast-forwarded" | You edited framework files locally, or upstream rebased | Run `git -C <FrameworkPath> status` to inspect; clean it, OR pass `-AllowStaleFramework` to use the current SHA |
 | `bootstrap.ps1`: "Framework has uncommitted changes or a stuck merge" | Dirty working tree | Run `git stash` / `git reset --hard` / `git merge --abort` in the framework, then retry |
 | `bootstrap.ps1`: previous copy was interrupted | Source Code\ has partial files | Re-run bootstrap; the sentinel mismatch is detected automatically and the copy is redone |
-| `bootstrap.ps1` step 7: `ERROR: CIDRA already installed` | First-bootstrap quirk — the source-copy sentinel under `.cidra/_bootstrap/` makes `install.ps1`'s `Test-Path .cidra` check trip before the framework files have actually been installed | Re-run the **same** command with `-ForceFramework` appended. install.ps1 will preserve your sentinel and proceed. (Architectural fix — moving the sentinel out of `.cidra/` — is queued.) |
+| `bootstrap.ps1` step 7: `ERROR: CIDRA already installed` | First-bootstrap quirk — the source-copy sentinel under `.cidra/_bootstrap/` makes `install.ps1`'s `Test-Path .cidra` check trip before the framework files have actually been installed | Re-run the **same** command with `-ForceFramework` appended. install.ps1 will preserve your sentinel and proceed. (Architectural fix has landed: sentinel moved to `.cidra-bootstrap/` (sibling of `.cidra/`); fresh projects bootstrapped against current `Scripts/bootstrap.ps1` no longer hit this trip — `-ForceFramework` is only needed on pre-existing projects bootstrapped under the legacy path. The migration runs automatically on the next bootstrap re-run.) |
 | `bootstrap.ps1`: "install.ps1 returned exit code N" (other than the above) | `install.ps1` failed inside its child process | Read the captured output above the error. Pass `-ForceFramework` to wipe and reinstall `.cidra/` + `.claude\commands\` |
 | `install.ps1`: "Access is denied" | Mark-of-the-Web on freshly downloaded scripts | The bootstrap handles this automatically. If running `install.ps1` directly: `Get-ChildItem $framework -Recurse -File \| Unblock-File` |
 | `install.ps1`: Notepad opens instead of running | You are in `cmd.exe`, not PowerShell | Open PowerShell. Run `powershell` first if needed. |
@@ -436,14 +438,20 @@ Optionally write a Hebrew/English cover letter alongside — see the Maccabi RK1
 | Chunker produces oversized chunks (>8000 tokens) | Single section too large | Use a splitting post-step (paragraph-boundary aware). See Maccabi RK1's `_chunker.ps1` for a working example. |
 | Mermaid diagrams render as raw code in viewer | Viewer doesn't support Mermaid | Pre-render to SVG with `mmdc`, embed as `<img src="data:image/svg+xml;base64,...">` |
 
+### PS 5.1 quirks (historical)
+
+Commit `475f078` introduced a `Get-ChildItem -File` workaround in `bootstrap.ps1` to dodge a suspected Windows PowerShell 5.1 parameter-binder bug. Empirical testing on Windows PowerShell **5.1.26100.8457** (the latest 5.1 build at the time of writing) shows the bare `-File` switch works fine — the workaround is **defensive, not corrective**. It is retained because subtle parameter-binder differences have been observed in some other PS 5.1 builds in the wild, not because of a reproducible bug on the current 5.1. If you are auditing the codebase and wonder why the longer form is used: this is a deliberate compatibility hedge, not a bug-fix scar.
+
 ---
 
 ## What lives where (after a complete run)
 
 ```
 <project>/
+├── .cidra-bootstrap/                    # bootstrap state sentinels (new location, post-F7)
 ├── .cidra/                              # framework files (don't edit)
-│   └── _bootstrap/                      # bootstrap state sentinels
+│   ├── Agents/                          # agent specifications
+│   └── _bootstrap/                      # bootstrap state sentinels (legacy location, pre-F7)
 ├── .claude/commands/                    # slash commands
 ├── Source Code/                         # your source code (preprocessed)
 ├── Reference/                           # reference materials (if -ReferenceDocsPath was used)

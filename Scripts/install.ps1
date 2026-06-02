@@ -85,6 +85,9 @@ function Install-CIDRA {
     # Create .cidra directory
     $cidraDir = Join-Path $TargetPath ".cidra"
 
+    # Sentinel lives at .cidra-bootstrap/ (sibling of .cidra/, not child),
+    # so this check no longer false-triggers on a fresh-project first
+    # bootstrap. If .cidra/ exists here, it is a real prior install.
     if ((Test-Path $cidraDir) -and -not $Force) {
         Write-Host "ERROR: CIDRA already installed. Use -Force to overwrite." -ForegroundColor $Red
         return $false

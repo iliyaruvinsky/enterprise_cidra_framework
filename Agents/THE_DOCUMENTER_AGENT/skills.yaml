@@ -69,7 +69,7 @@ user_invoked_skills:
           - if: "DOCUMENTER_PROJECT_CONFIG.yaml exists in project root"
             then: "read it and proceed"
           - elif: "BRAINSTORM_OUTPUT.yaml exists in project root"
-            then: "derive template / language / output_dir / validation_naming from its documenter_directives section, write DOCUMENTER_PROJECT_CONFIG.yaml from that, then proceed"
+            then: "derive template / language / output_dir / validation_naming from its documenter_config section, write DOCUMENTER_PROJECT_CONFIG.yaml from that, then proceed"
           - else: "invoke /document:setup first"
         on_missing: "invoke /document:setup first"
       - step: 2

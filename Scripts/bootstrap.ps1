@@ -292,9 +292,12 @@ $Project = Join-Path $ProjectRoot $ProjectFolder
 $SourceCodeDir = Join-Path $Project "Source Code"
 $ReferenceDir = Join-Path $Project "Reference"
 
-# Per-stage completion sentinels live under .cidra\_bootstrap\ to keep them
-# co-located with the framework install and out of the user's view.
-$SentinelDir = Join-Path $Project ".cidra\_bootstrap"
+# Per-stage completion sentinels live under .cidra-bootstrap\ (sibling of
+# .cidra\, not child) so a fresh bootstrap does not materialize .cidra\
+# before install.ps1 runs — install.ps1 treats an existing .cidra\ as
+# "already installed" and refuses to proceed without -Force.
+$SentinelDir = Join-Path $Project ".cidra-bootstrap"
+$LegacySentinelDir = Join-Path $Project ".cidra\_bootstrap"
 $SrcCopyDoneSentinel = Join-Path $SentinelDir "source_copy_complete.json"
 $MotwDoneSentinel    = Join-Path $FrameworkPath ".cidra_motw_unblocked"
 $InstallDoneSentinel = Join-Path $Project ".cidra\.install_complete"
@@ -857,6 +860,19 @@ if (-not (Test-Path -LiteralPath $SourceCodeDir)) {
     Write-Ok "Created $SourceCodeDir"
 } else {
     Write-Info "Source Code\ already exists"
+}
+
+# Migrate legacy sentinel directory (.cidra\_bootstrap -> .cidra-bootstrap)
+# from earlier framework versions. Preserves source_copy_complete.json so
+# idempotent re-runs of step 6 still detect a completed copy.
+if (-not (Test-WhatIfMode) -and
+    (Test-Path -LiteralPath $LegacySentinelDir) -and
+    -not (Test-Path -LiteralPath $SentinelDir)) {
+    New-Item -ItemType Directory -Path $SentinelDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $LegacySentinelDir -Force -ErrorAction SilentlyContinue |
+        ForEach-Object { Move-Item -LiteralPath $_.FullName -Destination $SentinelDir }
+    try { Remove-Item -LiteralPath $LegacySentinelDir -Force -Recurse -ErrorAction SilentlyContinue } catch {}
+    Write-Info "Migrated bootstrap sentinel from legacy .cidra\_bootstrap to .cidra-bootstrap"
 }
 
 # Sentinel directory

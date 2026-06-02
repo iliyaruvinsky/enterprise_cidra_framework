@@ -10,7 +10,7 @@ You are executing **THE_DOCUMENTER_AGENT** from the CIDRA framework.
 3. [.cidra/Agents/THE_DOCUMENTER_AGENT/as400_plugin.yaml](.cidra/Agents/THE_DOCUMENTER_AGENT/as400_plugin.yaml) — this project is AS/400 / COBOL
 4. [.cidra/Agents/THE_DOCUMENTER_AGENT/validation_framework.md](.cidra/Agents/THE_DOCUMENTER_AGENT/validation_framework.md)
 5. [.cidra/Agents/shared/anti_hallucination_engine.yaml](.cidra/Agents/shared/anti_hallucination_engine.yaml)
-6. If `DOCUMENTER_PROJECT_CONFIG.yaml` exists in project root, read it. ELSE if `BRAINSTORM_OUTPUT.yaml` exists, derive template / language / output_dir / validation_naming from its `documenter_directives` section, write `DOCUMENTER_PROJECT_CONFIG.yaml` from that, then proceed. ELSE prompt the user to run `/document:setup`.
+6. If `DOCUMENTER_PROJECT_CONFIG.yaml` exists in project root, read it. ELSE if `BRAINSTORM_OUTPUT.yaml` exists, derive template / language / output_dir / validation_naming from its `documenter_config` section, write `DOCUMENTER_PROJECT_CONFIG.yaml` from that, then proceed. ELSE prompt the user to run `/document:setup`.
 7. `CHUNKS/DOCUMENTER_INSTRUCTIONS.md` if it exists (Chunker's handoff)
 8. `BRAINSTORM_OUTPUT.yaml` at project root, IF it exists — Stage 0 output with chunking_strategy hints and component scope.
 

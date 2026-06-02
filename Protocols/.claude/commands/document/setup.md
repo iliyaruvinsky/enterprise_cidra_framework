@@ -16,7 +16,7 @@ You are executing **THE_DOCUMENTER_AGENT** skill **DOC_002 (document:setup)**.
 
 ## Defaults
 If BRAINSTORM_OUTPUT.yaml exists at the project root, derive defaults
-from its documenter_directives section.
+from its documenter_config section.
 Otherwise infer:
   project_name: <basename of $PWD> OR <component_id from BRAINSTORM_OUTPUT.yaml>
   documentation_language: <from BRAINSTORM_OUTPUT.yaml documenter_config.language, or prompt>

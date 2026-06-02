@@ -56,9 +56,9 @@ CIDRA agents communicate through **deterministic files** with stable names and l
 
 | File | Purpose | Format |
 |------|---------|--------|
-| `BRAINSTORM_OUTPUT.yaml` | Stage 0 blueprint: goals, scope, chunking_strategy hints, documenter_directives | YAML |
+| `BRAINSTORM_OUTPUT.yaml` | Stage 0 blueprint: goals, scope, chunking_strategy hints, documenter_config | YAML |
 
-This artifact is **optional** for downstream agents — they fall back to defaults when it is absent — but when present, the Chunker honors its `chunking_strategy` and the Documenter derives project config from its `documenter_directives` section (see DOC_001 step 1).
+This artifact is **optional** for downstream agents — they fall back to defaults when it is absent — but when present, the Chunker honors its `chunker_config` and the Documenter derives project config from its `documenter_config` section (see DOC_001 step 1).
 
 ---
 

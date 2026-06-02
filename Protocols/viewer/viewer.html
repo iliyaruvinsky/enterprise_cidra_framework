@@ -1595,6 +1595,24 @@ footer { unicode-bidi: isolate; }
     if (!Deps.htmlDocx())  tasks.push(loadScript('./vendor/html-docx.min.js').catch(function(){}));
     if (!Deps.exceljs())   tasks.push(loadScript('./vendor/exceljs.min.js').catch(function(){}));
     if (!Deps.jszip())     tasks.push(loadScript('./vendor/jszip.min.js').catch(function(){}));
+    if (!Deps.mermaid())   tasks.push(loadScript('./vendor/mermaid.min.js').catch(function(){}));
+    // katex-autorender depends on katex; chain so autorender only attempts
+    // after katex core resolves (success OR swallowed failure). If the
+    // vendor bytes are absent, both .catch() calls swallow silently — same
+    // defense-in-depth pattern as the other entries above.
+    if (!Deps.katex()) {
+      tasks.push(
+        loadScript('./vendor/katex.min.js')
+          .catch(function(){})
+          .then(function () {
+            if (!Deps.katexAutoRender()) {
+              return loadScript('./vendor/katex-auto-render.min.js').catch(function(){});
+            }
+          })
+      );
+    } else if (!Deps.katexAutoRender()) {
+      tasks.push(loadScript('./vendor/katex-auto-render.min.js').catch(function(){}));
+    }
     return Promise.all(tasks);
   }
 

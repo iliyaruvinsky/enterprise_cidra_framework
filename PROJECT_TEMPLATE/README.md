@@ -76,7 +76,7 @@
 
 **CIDRA Framework**: https://github.com/iliyaruvinsky/enterprise_cidra_framework  
 **Quick Start**: See framework's QUICK_START.md  
-**Workflow**: See framework's WORKFLOW.md
+**Process**: See framework's THE_PROCESS.md (canonical end-to-end process)
 
 ---
 
