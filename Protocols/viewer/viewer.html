@@ -2205,6 +2205,20 @@ footer { unicode-bidi: isolate; }
       State.renderedUnsanitized = true;
     }
 
+    // -----------------------------------------------------------------------
+    // PRE-RENDER: snapshot user's decision-mark clicks BEFORE innerHTML
+    // wipes the DOM. Without this, every theme/dir/mirror toggle (each of
+    // which re-calls render()) silently resets every clicked mark back to
+    // its source character — a customer could click 40 marks, toggle dark
+    // mode "to see better", click Save and write 40 untouched ☐s. After
+    // wrapDecisionMarks recreates the spans below, we restore each span's
+    // state positionally from this snapshot.
+    // -----------------------------------------------------------------------
+    var markStateSnapshot = Array.prototype.map.call(
+      out.querySelectorAll('.cidra-mark'),
+      function (s) { return s.getAttribute('data-state') || '☐'; }
+    );
+
     out.innerHTML = safeHtml;
 
     // -----------------------------------------------------------------------
@@ -2227,6 +2241,32 @@ footer { unicode-bidi: isolate; }
     // menu item rebuilds the source markdown with the user's clicks applied.
     // -----------------------------------------------------------------------
     wrapDecisionMarks(out);
+
+    // -----------------------------------------------------------------------
+    // POST-RENDER: restore clicked decision-mark states from snapshot.
+    // Positional match: snapshot[i] maps to the Nth .cidra-mark in DOM
+    // order. If counts differ (rare — e.g. external file change reduced
+    // the number of marks), restore as far as the shorter side allows
+    // and log the count drift to console so the discrepancy is visible
+    // without breaking the document.
+    // -----------------------------------------------------------------------
+    if (markStateSnapshot.length > 0) {
+      var newMarks = out.querySelectorAll('.cidra-mark');
+      if (newMarks.length !== markStateSnapshot.length) {
+        // eslint-disable-next-line no-console
+        console.warn('[viewer] decision-mark count drift on re-render: ' +
+          markStateSnapshot.length + ' -> ' + newMarks.length +
+          '. States restored up to the shorter side.');
+      }
+      var restoreCount = Math.min(newMarks.length, markStateSnapshot.length);
+      for (var i = 0; i < restoreCount; i++) {
+        var prevState = markStateSnapshot[i];
+        if (prevState && prevState !== newMarks[i].getAttribute('data-state')) {
+          newMarks[i].setAttribute('data-state', prevState);
+          newMarks[i].textContent = prevState;
+        }
+      }
+    }
 
     // -----------------------------------------------------------------------
     // POST-RENDER: Mermaid diagrams + KaTeX math.
