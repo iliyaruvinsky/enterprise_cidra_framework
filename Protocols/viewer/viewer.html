@@ -740,15 +740,16 @@ html[data-theme="dark"] .export-menu-root .menu-item:focus-visible:not([aria-dis
   text-align: left;
   line-height: 1.45;
 }
-/* Unlabeled code fences (```...``` with no language tag) get dir="auto" from
-   the renderer so a Hebrew prose checklist or any RTL content inside a
-   fence reads correctly. revert lets the HTML dir attribute take effect
-   (the .md pre rule above otherwise forces direction:ltr); text-align:start
-   aligns to the leading edge so RTL content sits on the right, LTR on the
-   left. */
-.md pre[dir="auto"] {
-  direction: revert;
-  text-align: start;
+/* Unlabeled code fences with predominantly Hebrew content: renderer.code
+   sets dir="rtl" explicitly (it counts Hebrew vs Latin characters and
+   picks the dominant one). These overrides force the surrounding
+   .md pre { direction: ltr; text-align: left } default to give way so
+   the Hebrew prose actually reads right-to-left. !important is required
+   because the base .md pre rule has equal specificity. */
+.md pre[dir="rtl"] {
+  direction: rtl !important;
+  text-align: right !important;
+  unicode-bidi: isolate !important;
 }
 .md pre code {
   background: none;
@@ -1794,12 +1795,17 @@ footer { unicode-bidi: isolate; }
       }
       // Direction policy for code fences:
       //   - lang = explicit (cobol/python/yaml/etc.) → dir="ltr" (real code)
-      //   - lang = plaintext (no fence info-string)  → dir="auto"
-      //     so unlabeled fences containing prose (Hebrew checklists, ASCII
-      //     diagrams, mixed content) get browser bidi auto-detection from
-      //     the first-strong character. The CSS rule .md pre[dir="auto"]
-      //     reverts direction so the HTML attribute actually takes effect.
-      const dirAttr = (lang === 'plaintext') ? 'auto' : 'ltr';
+      //   - lang = plaintext (no fence info-string)  → detect Hebrew vs Latin
+      //     content and emit dir="rtl" or dir="ltr" explicitly. We do NOT
+      //     use dir="auto" because the CSS rule .md pre { direction: ltr }
+      //     fights it across browsers/caches. Explicit dir + the
+      //     .md pre[dir="rtl"] override below makes the choice deterministic.
+      let dirAttr = 'ltr';
+      if (lang === 'plaintext') {
+        const hebrewCount = (code.match(/[֐-׿]/g) || []).length;
+        const latinCount  = (code.match(/[A-Za-z]/g) || []).length;
+        if (hebrewCount > latinCount) dirAttr = 'rtl';
+      }
       return '<pre dir="' + dirAttr + '"><code class="hljs language-' + escapeHtml(lang) + '">' +
              highlighted + '</code></pre>';
     };
