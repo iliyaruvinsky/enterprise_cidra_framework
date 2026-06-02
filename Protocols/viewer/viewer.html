@@ -2056,6 +2056,19 @@ footer { unicode-bidi: isolate; }
     out.innerHTML = safeHtml;
 
     // -----------------------------------------------------------------------
+    // POST-RENDER: belt-and-suspenders RTL styling for Hebrew-prose code
+    // fences. CSS-based override is brittle against browser caches and
+    // CSS specificity quirks; applying inline styles with the !important
+    // priority via the CSSOM is bulletproof — it wins over any cached or
+    // missing-author rules and survives Ctrl+F5 weirdness on file:// URLs.
+    // -----------------------------------------------------------------------
+    out.querySelectorAll('pre[dir="rtl"]').forEach(function (el) {
+      el.style.setProperty('direction',    'rtl',     'important');
+      el.style.setProperty('text-align',   'right',   'important');
+      el.style.setProperty('unicode-bidi', 'isolate', 'important');
+    });
+
+    // -----------------------------------------------------------------------
     // POST-RENDER: Mermaid diagrams + KaTeX math.
     //
     // Both libraries walk the rendered DOM and mutate in place. They run
