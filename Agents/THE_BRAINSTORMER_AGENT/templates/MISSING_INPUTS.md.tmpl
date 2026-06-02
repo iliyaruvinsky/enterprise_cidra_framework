@@ -2,108 +2,120 @@
 documentation_language: [LANG_CODE]
 ---
 
-# MISSING_INPUTS.md
+# [SHORT_HUMAN_TITLE — e.g. "Open questions to the customer — [PROJECT]"]
 
-> Produced by **THE_BRAINSTORMER_AGENT** at checkpoint **[CHECKPOINT_NAME]**.
-> This list is refreshed at three points in every CIDRA project (pre-chunking · mid-documentation · post-validation).
-> Refresh history is at the bottom.
+**Generated:** [DATETIME] · **Checkpoint:** [N of 3 — pre-chunking | mid-documentation | post-validation]
+**Project:** [PROJECT_NAME] · **[ONE-LINE CONTEXT — e.g. "3 main programs, ~Nk lines, CA 2E"]**
 
-**Project:** [PROJECT_NAME]
-**Checkpoint:** [1 of 3 — pre-chunking | 2 of 3 — mid-documentation | 3 of 3 — post-validation]
-**Generated:** [DATETIME]
+Before continuing — these N questions affect documentation quality. For each item, mark the **Answer** line with **✓** (will provide), **✗** (won't / can't — acknowledged risk), or **❓** (need to check).
 
 ---
 
-## At-a-glance status
+## 📋 Questions & status table
 
-| # | Item | Severity | Status |
+| # | Question | Severity | Answer |
 |:---:|:---|:---:|:---:|
-| 1 | [item name] | 🔴 critical | ☐ |
-| 2 | [item name] | 🔴 critical | ☐ |
-| N | [item name] | 🟡 high | ☐ |
-| N | [item name] | 🟢 medium | ☐ |
-
-Status legend: ☐ awaiting · ✓ will provide · ✗ won't / can't (acknowledged risk) · ? checking with team.
+| 1 | [short question form] | 🔴 critical | ☐ |
+| 2 | [short question form] | 🔴 critical | ☐ |
+| N | [short question form] | 🟡 high | ☐ |
+| N | [short question form] | 🟢 medium | ☐ |
 
 ---
 
-## 🔴 CRITICAL — blocks "perfect" documentation
-
-Items in this section, if unfilled, prevent the documentation from reaching the agreed quality threshold. The CIDRA framework will explicitly note these gaps in every output file's Limitations section.
-
-### 1. [item name]
-
-- **Status:** ☐ awaiting customer mark
-- **Why critical:** [explanation]
-- **Without this we cannot:** [specific limitation]
-
-### 2. [item name]
-
-- **Status:** ☐ awaiting customer mark
-- **Why critical:** [explanation]
-- **Without this we cannot:** [specific limitation]
-
----
-
-## 🟡 HIGH — significantly improves quality
+## 🔴 Critical
 
 ### N. [item name]
 
-- **Status:** ☐ awaiting customer mark
-- **Why high-value:** [explanation]
-- **With this we could additionally:** [enhancement]
+**❓ [The actual question, plain language, customer-readable]**
+
+**Answer:** ☐ (mark ✓ / ✗ / ❓)
+
+<details><summary>Why it matters</summary>
+
+[Short explanation — what's at stake, what we lose without this. Keep it to a paragraph. NO bullet lists, NO sub-sections, NO repetition.]
+
+</details>
 
 ---
 
-## 🟢 MEDIUM — adds context
+## 🟡 High
 
 ### N. [item name]
 
-- **Status:** ☐ awaiting customer mark
-- **Adds:** [context / color]
+**❓ [The actual question]**
+
+**Answer:** ☐
+
+<details><summary>Why it matters</summary>
+
+[Short explanation]
+
+</details>
 
 ---
 
-## ✗ Acknowledged gaps (customer declined to provide)
-
-Items the customer explicitly confirmed will NOT be provided. Documentation proceeds with these gaps recorded as risk:
+## 🟢 Medium
 
 ### N. [item name]
 
-- **Status:** ✗ acknowledged not available
-- **Customer reason:** "..."
-- **Documentation note:** explicit Limitations section entry in every relevant output file
+**❓ [The actual question]**
+
+**Answer:** ☐
+
+<details><summary>Why it matters</summary>
+
+[Short explanation]
+
+</details>
+
+---
+
+## ✗ Acknowledged gaps
+
+*Empty initially. Items the customer marks ✗ migrate here automatically when MISSING_INPUTS.md is re-issued.*
+
+---
+
+## ⚠️ Scope / depth note (BRN_R4) — only if a real scope/depth conflict was flagged
+
+[If conflict_flag.detected = true in BRAINSTORM_OUTPUT.yaml, emit this section with the coverage-level table and an explicit yes/no question to the customer. Omit the entire section otherwise.]
+
+**[The actual question to the customer about scope/depth tradeoff]?** ☐
 
 ---
 
 ## How to respond
 
-For each item above, edit the **Status** line:
-- **✓** — "I'll provide it"
-- **✗** — "We can't / won't provide it" (acknowledged risk)
-- **?** — "Need to investigate — checking with team"
-
-Update the **At-a-glance status** table at the top to match. Items left as ☐ are treated as **?** and re-surfaced at the next checkpoint.
+For each question above, edit the **Answer:** line and replace ☐ with ✓ / ✗ / ❓. Update the table at the top to match. Save and return the file.
 
 ---
 
 ## Refresh history
 
-| Checkpoint | When | What changed since last issue |
-|------------|------|-------------------------------|
-| 1 of 3 — pre-chunking | [DATETIME] | initial issuance |
-| 2 of 3 — mid-documentation | — | (not yet issued) |
-| 3 of 3 — post-validation | — | (not yet issued) |
+| Checkpoint | When | What changed |
+|------------|------|--------------|
+| N of 3 — [name] | [DATETIME] | [what changed since last issue, e.g. "initial issuance" or "items 2,5 marked ✓ by customer"] |
 
 ---
 
-## Authoring note for THE_BRAINSTORMER_AGENT
+## Authoring rules for THE_BRAINSTORMER_AGENT
 
 When emitting this file:
 
-1. **Use Markdown headings (`### N. ...`) and bulleted lists for each item — never code fences (```\`\`\`...\`\`\`\` `).** Code fences render as monospace LTR `<pre>` blocks and fight RTL document direction. Markdown lists inherit the document's natural direction and render correctly in every viewer.
-2. Always emit the `documentation_language` frontmatter (he / en / he-en) so the viewer can apply the right direction policy.
-3. Keep section headings as `##` (one block per severity). Items as `###` (one block per item).
-4. Status, "Why critical / high-value", and consequence/enhancement bullets in that order so a customer scanning the file gets the gist before details.
+1. **Lead each item with the QUESTION, in plain customer-readable language.** Not "Why critical: ..." not "Without this we cannot: ..." — those are internal justifications. The customer wants to know "What are you asking me?" The "why" is collapsed inside `<details>`.
+
+2. **No code fences (` ``` `) for checklists or prose.** They render as monospace LTR `<pre>` blocks that fight RTL document direction. Use Markdown headings (`###`) and bullet lists for everything.
+
+3. **Always include the questions-and-status table at the top** so the customer can scan the whole list and see what's still open without scrolling through every section.
+
+4. **Always include the YAML frontmatter** `documentation_language: he | en | he-en` so the viewer applies the correct direction policy.
+
+5. **Each item is ONE question.** Don't bundle. If you have multiple things to ask, multiple items.
+
+6. **`<details>` for the "why"** — short paragraph, no nested lists, no repetition. The customer who cares clicks; the customer who doesn't care moves on.
+
+7. **Only include the BRN_R4 scope/depth section if a real conflict was flagged.** Don't emit it as boilerplate every time.
+
+8. **Refresh history** — append a row for every re-issue with what changed (which items the customer marked, what new items appeared, what disappeared).
 
 *BRN_005 (continuous_gap_check) — CRITICAL skill of THE_BRAINSTORMER_AGENT — enforces this refresh schedule.*
