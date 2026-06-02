@@ -56,17 +56,30 @@ user_invoked_skills:
       - step: 7
         action: "gap_report_emission"
         description: "Produce MISSING_INPUTS.md for customer review"
+      - step: 8
+        action: "roadmap_emission"
+        description: "Produce ROADMAP.md — the customer-facing journey
+          map (what they'll do, what we'll do, at every stage). Visual
+          milestone diagram + at-a-glance table + per-stage detail
+          (current stage gets full treatment; future stages get a short
+          summary). Sourced from templates/ROADMAP.md.tmpl. Driven by
+          [[feedback-framework-ux-principles]]: enterprise audience,
+          predictable structure, viewer-as-communication-tool."
 
     outputs:
       - "BRAINSTORM_OUTPUT.yaml"
       - "MISSING_INPUTS.md"
+      - "ROADMAP.md"
       - "BRAINSTORM_DIALOG_LOG.md"
 
   - skill_id: "BRN_002_CMD"
     name: "brainstorm:gap"
     command: "/brainstorm:gap"
     type: "checkpoint"
-    description: "Re-issue the missing-inputs report. Run at any checkpoint."
+    description: "Re-issue the missing-inputs report. Run at any checkpoint.
+      Also re-issues ROADMAP.md so the journey diagram and at-a-glance
+      table reflect the current stage and any items the customer has
+      acknowledged since the previous issue."
 
     when:
       - "Pre-chunking (after /brainstorm initial Q&A)"
@@ -76,6 +89,7 @@ user_invoked_skills:
 
     outputs:
       - "MISSING_INPUTS.md (refreshed)"
+      - "ROADMAP.md (refreshed)"
 
   - skill_id: "BRN_003_CMD"
     name: "brainstorm:status"

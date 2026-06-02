@@ -1,0 +1,155 @@
+---
+documentation_language: [LANG_CODE]
+---
+
+# 🗺️ [HEADING — e.g. "Your B+CIDRA Journey"]
+## [SUBHEADING — e.g. "Project: <project name>"]
+
+> **What is this file?**
+> One screen showing where you are now, what's coming, and your role at each stage. You can return here at any time — the file updates as the project progresses.
+
+---
+
+## Where are you now?
+
+```mermaid
+flowchart LR
+  S0["📝 Stage 0<br/>Open questions<br/><b>YOU ARE HERE</b>"]:::active --> S1["🔍 Stage 1<br/>Code analysis"]:::pending
+  S1 --> S2["📄 Stage 2<br/>Documentation"]:::pending
+  S2 --> S3["✅ Stage 3<br/>Review & approve"]:::pending
+  S3 --> S4["📦 Stage 4<br/>Delivery"]:::pending
+
+  classDef active fill:#1f6feb,stroke:#0a3069,color:#fff,font-weight:bold,stroke-width:3px
+  classDef done   fill:#1a7f37,stroke:#0c4a1c,color:#fff
+  classDef pending fill:#f6f8fa,stroke:#999,color:#666
+```
+
+**Now:** Stage [N] — [stage name]. **Your action:** [one-line concrete action with file link]. **Expected time:** [time].
+
+---
+
+## Journey at a glance
+
+| # | Stage | What you do | What we do | Expected time | Status |
+|:---:|:---|:---|:---|:---:|:---:|
+| 0 | Open questions | Mark ✓/✗/❓ on N questions | Read your answers | [time] | 🔵 / ✅ / ⏳ |
+| 1 | Code analysis | (no action) | Chunk the code into logical units | [time] | ⏳ |
+| 2 | Documentation | (optional: follow in chat) | Generate documentation set | [time] | ⏳ |
+| 3 | Review & approve | Read, flag what needs adjustment | Fix per your marks | [time] | ⏳ |
+| 4 | Delivery | Final approval | Package + handoff | [time] | ⏳ |
+
+**Legend:** 🔵 active · ✅ done · ⏳ pending
+
+---
+
+## Stage [CURRENT_N] (now) — [stage name]
+
+**❓ What to do:**
+
+1. [First concrete step, with a viewer-clickable file link]
+2. [Second concrete step]
+3. [Third concrete step — usually "Export → Export decisions, send the file back"]
+
+**Expected time:** [time].
+
+<details><summary>Why this step matters</summary>
+
+[Short paragraph — what's at stake at this stage, what depends on the customer's input. NO bullet lists, NO sub-sections.]
+
+</details>
+
+<details><summary>What if I want to change my answer later?</summary>
+
+[Standard recovery instructions for this stage.]
+
+</details>
+
+---
+
+## Stage [N+1] — [next stage]
+
+**What happens:** [one short paragraph describing what the framework does automatically OR what the user does]
+
+**Your action:** [either "none" or a specific action]
+
+**Time:** [time]
+
+**What you get at the end:** [artifact name + brief description]
+
+---
+
+[REPEAT for every subsequent stage in the chosen mode (B+CID = 5 stages: 0/1/2/3/4; B+CIDR = 6 stages; B+CIDRA = 7 stages — but acknowledge the planned ones for I+A as "future roadmap"].
+
+---
+
+## ❓ FAQ
+
+<details><summary>I'm not sure how to open the viewer</summary>
+
+[Standard onboarding: viewer.html opens in any browser; Open .md button picks up the project file.]
+
+</details>
+
+<details><summary>What if I have a question that isn't in MISSING_INPUTS.md?</summary>
+
+[Standard: write the question at the bottom of MISSING_INPUTS.md or send to the developer directly; it gets added to the next checkpoint.]
+
+</details>
+
+<details><summary>I'm not technical — what should I do?</summary>
+
+[Standard reassurance: this file is intentionally written for a non-technical reader. If something feels too technical, that's a bug — escalate to the developer.]
+
+</details>
+
+---
+
+## Communication channels
+
+- **Documents** (this file, MISSING_INPUTS.md, future Screens/.../README.md): the primary structured-communication channel. Decisions, approvals, status — all flow through documents the customer opens in the viewer, clicks through, exports back.
+- **Chat with [DEVELOPER_NAME]**: for any question not in a document, or any ad-hoc conversation. Always open.
+
+---
+
+## File map
+
+```
+[PROJECT_ROOT]\
+│
+├── ROADMAP.md              ← you are here
+├── MISSING_INPUTS.md       ← Stage 0 action
+├── BRAINSTORM_OUTPUT.yaml  ← internal, no need to read
+├── BRAINSTORM_DIALOG_LOG.md ← record of dialog so far
+│
+├── CHUNKS/                 ← (appears at end of Stage 1)
+├── Screens/<COMPONENT>/    ← (appears at end of Stage 2, what you read in Stage 3)
+└── Source Code/            ← original code, we don't modify it
+```
+
+---
+
+## Authoring rules for THE_BRAINSTORMER_AGENT
+
+When emitting ROADMAP.md:
+
+1. **Pick the Mode first.** B+CID = 5 stages (0-4). B+CIDR = 6 stages (0-5). B+CIDRA = 7 stages (0-6) but mark Interpreter + Applicator as 🟣 planned per THE_PROCESS.md. The stage count in the journey diagram + the at-a-glance table must match.
+
+2. **The Mermaid journey diagram** is the visual anchor — keep it horizontal, classDef colors as defined (active blue, done green, pending light gray), and update the "YOU ARE HERE" label every time the file is regenerated.
+
+3. **At the top: the at-a-glance table must reflect TRUE current state.** Stages done = ✅, current = 🔵, future = ⏳. Update on every re-issue.
+
+4. **One stage gets the full treatment** — the current one. Future stages get the short summary block. Done stages collapse into a `<details>` block once we've moved past them.
+
+5. **Frontmatter must set `documentation_language`** to match the project (he / en / he-en).
+
+6. **Lead with the action.** Each stage starts with "Your action:" or "What to do:" — no preamble. The "why" is collapsed.
+
+7. **FAQ is standard** — keep the 3 questions ("how to open viewer", "what if my question isn't listed", "I'm not technical"). Add project-specific ones if needed but don't drop these.
+
+8. **File map at the bottom** is project-specific — list the actual files/dirs that exist or will exist. Updated when new artifacts land.
+
+9. **Re-emit on every checkpoint refresh** so the journey diagram, at-a-glance table, and current-stage section are always accurate. Old MISSING_INPUTS.md gap re-issues also trigger a ROADMAP.md re-issue.
+
+10. **Style: laconic, predictable, action-led.** No mumbling. No jargon. No "as previously mentioned." The customer should be able to read this in 2 minutes and know exactly what to do next.
+
+*Driven by [[feedback-framework-ux-principles]]: enterprise audience, low LLM context, time-poor, deterministic structure.*
