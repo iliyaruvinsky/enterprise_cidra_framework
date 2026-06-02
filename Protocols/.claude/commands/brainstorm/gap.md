@@ -6,6 +6,8 @@ You are executing **THE_BRAINSTORMER_AGENT** skill **BRN_005 (continuous_gap_che
 
 **Reads:**
 - [.cidra/Agents/THE_BRAINSTORMER_AGENT/skills.yaml](.cidra/Agents/THE_BRAINSTORMER_AGENT/skills.yaml) — skill BRN_005
+- [.cidra/Agents/THE_BRAINSTORMER_AGENT/templates/MISSING_INPUTS.md.tmpl](.cidra/Agents/THE_BRAINSTORMER_AGENT/templates/MISSING_INPUTS.md.tmpl)
+- [.cidra/Agents/THE_BRAINSTORMER_AGENT/templates/ROADMAP.md.tmpl](.cidra/Agents/THE_BRAINSTORMER_AGENT/templates/ROADMAP.md.tmpl)
 - `BRAINSTORM_OUTPUT.yaml` at project root — what's known and what's still gap-listed
 - Current state of the project — has `/chunk` run? Has `/document` run? Has `/document:validate` run?
 
@@ -25,5 +27,12 @@ You are executing **THE_BRAINSTORMER_AGENT** skill **BRN_005 (continuous_gap_che
 - New items the recent work has revealed (e.g. "the chunker discovered 18 external programs — sources still missing")
 
 **Refresh history table** at the bottom must record what changed since the last issuance.
+
+**Also re-emit `ROADMAP.md`** so the journey diagram and at-a-glance table reflect the new checkpoint:
+- Update the active-stage marker on the Mermaid diagram (move "YOU ARE HERE" forward if the project has advanced)
+- Mark completed stages ✅ in the at-a-glance table
+- Collapse done-stage detail sections into `<details>` blocks
+- Keep the current stage's section in full ("Your action:" leading, "why" collapsed)
+- Update the file map at the bottom to reflect new artifacts that have appeared (CHUNKS/, Screens/, etc.)
 
 This is non-optional. Per BRN_010, gaps are surfaced even if the customer didn't ask.
