@@ -156,7 +156,7 @@
      layer cannot enforce it AND Chromium logs a console error for it.
      Enforce clickjacking protection at the HTTP-header layer instead. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net/npm/; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'none'; upgrade-insecure-requests">
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net/npm/; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'none'; upgrade-insecure-requests">
 <title lang="en" dir="ltr">CIDRA Documentation Viewer</title>
 
 <!-- =========================================================================
@@ -232,6 +232,16 @@
       integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
       crossorigin="anonymous"
       onerror="window.__cidraDepFail['hljs-theme-dark']=true;">
+
+<!-- KaTeX CSS — needed before katex JS renders math so fonts are
+     available at first paint. font-src in CSP includes cdn.jsdelivr.net
+     to permit the woff2 files this stylesheet references. -->
+<link rel="stylesheet"
+      data-dep="katex-css"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+      integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+"
+      crossorigin="anonymous"
+      onerror="window.__cidraDepFail['katex-css']=true;">
 
 <style>
 /* ---------------------------------------------------------------------------
@@ -1298,6 +1308,35 @@ footer { unicode-bidi: isolate; }
 <script defer data-dep="hljs-xml"        src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/languages/xml.min.js"        integrity="sha384-jgkY4GMNWfQcLLIoP1vg3FWXflDrRhcSXGBW6ONIWC2SOIv5H1Pa57sXs+aomCuZ" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-xml']=true;"        onerror="window.__cidraDepFail['hljs-xml']=true;"></script>
 <script defer data-dep="hljs-cobol"      src="https://cdn.jsdelivr.net/npm/highlightjs-cobol@0.3.1/dist/cobol.min.js"                  integrity="sha384-IoavtzDKwguqHFi4rsxIt3BKoXKrua1JoUtkgFH4sMWba0tKsWL0luir9Gm0/vLi" crossorigin="anonymous" onload="window.__cidraDepLoaded['hljs-cobol']=true;"      onerror="window.__cidraDepFail['hljs-cobol']=true;"></script>
 
+<!-- Mermaid — diagrams in ```mermaid fences. Loaded with defer so it
+     does not block parsing; render is triggered post-DOMPurify in the
+     boot script's render() function. ~3.3 MB minified. Graceful
+     degradation: if it fails to load, mermaid fences fall through to
+     plain code blocks (renderer.code's mermaid branch detects missing
+     Deps.mermaid() at runtime — see boot script). -->
+<script defer data-dep="mermaid"
+        src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"
+        integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr"
+        crossorigin="anonymous"
+        onload="window.__cidraDepLoaded.mermaid=true;"
+        onerror="window.__cidraDepFail.mermaid=true;"></script>
+
+<!-- KaTeX — LaTeX math in $inline$ and $$display$$ and \(...\) / \[...\].
+     auto-render contrib walks the rendered DOM and replaces delimited
+     spans. Order matters: katex core MUST load before auto-render. -->
+<script defer data-dep="katex"
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+        integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg"
+        crossorigin="anonymous"
+        onload="window.__cidraDepLoaded.katex=true;"
+        onerror="window.__cidraDepFail.katex=true;"></script>
+<script defer data-dep="katex-autorender"
+        src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+        integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk"
+        crossorigin="anonymous"
+        onload="window.__cidraDepLoaded['katex-autorender']=true;"
+        onerror="window.__cidraDepFail['katex-autorender']=true;"></script>
+
 <!-- OPTIONAL — DOCX export. html-docx-js v0.3.1 pinned (last release; the
      library is functionally complete-but-unmaintained, see README). If
      it fails to load (CDN blocked, SRI mismatch, ./vendor fallback also
@@ -1367,6 +1406,14 @@ footer { unicode-bidi: isolate; }
     dompurify: function () { return !!window.DOMPurify && typeof window.DOMPurify.sanitize === 'function'; },
     // hljs is an object with .highlight + .registerLanguage.
     hljs:      function () { return !!window.hljs      && typeof window.hljs.highlight    === 'function'; },
+    // mermaid v10 exposes .run() (replaces v9's .init()). Boot script calls
+    // mermaid.initialize + mermaid.run({nodes:[...]}) once per render pass.
+    mermaid:   function () { return !!window.mermaid   && typeof window.mermaid.run       === 'function'; },
+    // KaTeX auto-render contrib walks the DOM and replaces math delimiters
+    // in place. We never call window.katex directly — auto-render owns the
+    // public surface — but checking katex too guards against a partial load.
+    katex:           function () { return !!window.katex && typeof window.katex.render === 'function'; },
+    katexAutoRender: function () { return typeof window.renderMathInElement === 'function'; },
     // html-docx-js is exposed as window.htmlDocx with asBlob().
     htmlDocx:  function () { return !!window.htmlDocx  && typeof window.htmlDocx.asBlob  === 'function'; },
     // ExcelJS exposes a global ExcelJS object with a Workbook constructor.
@@ -1684,6 +1731,19 @@ footer { unicode-bidi: isolate; }
 
     renderer.code = function(code, infostring, escaped) {
       const lang = sanitizeLang((infostring || '').match(/\S*/)?.[0] || '');
+
+      // Mermaid: emit a <div class="mermaid"> placeholder. After
+      // marked + DOMPurify + innerHTML, the boot script's render() function
+      // calls mermaid.run() on these nodes to swap the placeholder for SVG.
+      // If mermaid failed to load, the boot script leaves the placeholder
+      // as-is and we surface a banner so the source text remains visible
+      // rather than disappearing silently. escapeHtml() on the source is
+      // safe because the browser's HTML parser will decode entities before
+      // mermaid reads .textContent.
+      if (lang === 'mermaid') {
+        return '<div class="mermaid" dir="ltr">' + escapeHtml(code) + '</div>';
+      }
+
       let highlighted;
       try {
         if (lang === 'plaintext' || !Deps.hasGrammar(lang)) {
@@ -1945,6 +2005,83 @@ footer { unicode-bidi: isolate; }
     }
 
     out.innerHTML = safeHtml;
+
+    // -----------------------------------------------------------------------
+    // POST-RENDER: Mermaid diagrams + KaTeX math.
+    //
+    // Both libraries walk the rendered DOM and mutate in place. They run
+    // AFTER DOMPurify because:
+    //   - DOMPurify is happy with our placeholder shapes (<div class=mermaid>
+    //     for diagrams; raw $...$ text for math). It would mangle the SVGs
+    //     mermaid emits if we tried to sanitize them.
+    //   - Both libraries set attributes directly on DOM nodes (not via
+    //     innerHTML), so their output never re-enters DOMPurify.
+    //
+    // Failures here MUST NOT throw — the document body is already on screen,
+    // and a diagram/math error should degrade to "source text remains
+    // visible" plus a non-blocking banner.
+    // -----------------------------------------------------------------------
+
+    if (Deps.mermaid()) {
+      try {
+        const mermaidNodes = out.querySelectorAll('.mermaid:not([data-processed="true"])');
+        if (mermaidNodes.length > 0) {
+          const theme = (document.documentElement.getAttribute('data-theme') === 'dark')
+                      ? 'dark' : 'default';
+          window.mermaid.initialize({
+            startOnLoad: false,
+            theme: theme,
+            securityLevel: 'strict',
+            fontFamily: 'inherit'
+          });
+          // mermaid.run() returns a promise; catch to keep render() sync-safe.
+          window.mermaid.run({ nodes: mermaidNodes }).catch(function (err) {
+            if (typeof Banner !== 'undefined' && Banner.warning) {
+              Banner.warning('mermaid', [{bilingual: {
+                en: 'One or more Mermaid diagrams failed to render (source kept visible).',
+                he: 'תרשים Mermaid אחד או יותר נכשל ברינדור (המקור נשמר גלוי).'
+              }}]);
+            }
+            // eslint-disable-next-line no-console
+            console.warn('[viewer] mermaid.run error:', err);
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[viewer] mermaid initialize failed:', err);
+      }
+    } else if ((out.querySelector && out.querySelector('.mermaid')) &&
+               window.__cidraDepFail && window.__cidraDepFail.mermaid) {
+      if (typeof Banner !== 'undefined' && Banner.warning) {
+        Banner.warning('mermaid-missing', [{bilingual: {
+          en: 'Mermaid library failed to load — diagrams are shown as raw source.',
+          he: 'ספריית Mermaid לא נטענה — תרשימים מוצגים כקוד מקור.'
+        }}]);
+      }
+    }
+
+    if (Deps.katexAutoRender()) {
+      try {
+        window.renderMathInElement(out, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true  },
+            { left: '\\[', right: '\\]', display: true  },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '$',  right: '$',  display: false }
+          ],
+          // throwOnError:false makes KaTeX render broken math as a red
+          // text span instead of throwing — better UX for half-typed docs.
+          throwOnError: false,
+          // Don't process inside elements where $ is likely shell syntax,
+          // currency, or code, not math.
+          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[viewer] katex renderMathInElement failed:', err);
+      }
+    }
+
     // Re-evaluate Export button enablement on every successful render.
     if (typeof refreshExportButtons === 'function') refreshExportButtons();
   }
@@ -3785,6 +3922,10 @@ footer { unicode-bidi: isolate; }
         if (darkLink)  darkLink.disabled  = (next === 'light');
         btnTheme.textContent =
           'Theme: ' + (next.charAt(0).toUpperCase() + next.slice(1));
+        // Re-render so Mermaid picks up the new theme (its SVG embeds the
+        // colors at render time, so toggling CSS would not recolor existing
+        // diagrams). KaTeX is theme-neutral and is re-run as a side effect.
+        if (State.lastRawMd != null) render(State.lastRawMd, State.lastFileName);
       });
     }
 
