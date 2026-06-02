@@ -786,6 +786,34 @@ html[data-theme="dark"] .cidra-mark:hover {
 html[data-theme="dark"] .cidra-mark[data-state="✓"] { color: #3fb950; }
 html[data-theme="dark"] .cidra-mark[data-state="✗"] { color: #f85149; }
 html[data-theme="dark"] .cidra-mark[data-state="❓"] { color: #d29922; }
+
+/* Decision-mark progress counter (toolbar status surface).
+   Reuses the same semantic palette as .cidra-mark — green when all
+   marks are answered, neutral while in progress. The chip shape
+   echoes the export button to read as part of the toolbar
+   vocabulary; no decorative chrome. */
+.decisions-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--toolbar-bg);
+  color: var(--muted);
+  font: 600 13px/1 var(--sans);
+  white-space: nowrap;
+  user-select: none;
+}
+.decisions-counter[data-progress="complete"] {
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+html[data-theme="dark"] .decisions-counter[data-progress="complete"] {
+  color: #3fb950;
+  border-color: #3fb950;
+}
+.decisions-counter[hidden] { display: none; }
 .md pre code {
   background: none;
   padding: 0;
@@ -1183,6 +1211,13 @@ footer { unicode-bidi: isolate; }
   <button id="btnTheme" title="Toggle light / dark theme">Theme: Light</button>
   <button id="btnMirrorComments" title="Mirror Hebrew comments inside code blocks">Mirror HE Comments: Off</button>
   <button id="btnClear" title="Clear current document">Clear</button>
+
+  <!-- Decision-mark progress. Hidden when the open document has no
+       clickable marks. Updates on every click (event delegate calls
+       updateDecisionsCounter) and on every render. Pure status surface
+       (semantic role + aria-live) — not a button. -->
+  <span id="decisionsCounter" class="decisions-counter" role="status"
+        aria-live="polite" aria-atomic="true" hidden>0/0</span>
 
   <!-- =====================================================================
        Export dropdown (v1.6.0). Replaces the previous five buttons
@@ -1871,6 +1906,35 @@ footer { unicode-bidi: isolate; }
     span.textContent = next;
   }
 
+  // Update the toolbar progress counter (#decisionsCounter). Counts
+  // .cidra-mark spans whose data-state has been clicked to anything
+  // other than ☐. Hidden when no marks present; "complete" data-progress
+  // attribute when every mark has been touched so the chip flips to
+  // the success palette. Called on every click (via the event delegate
+  // in wireUI) and on every render (so re-renders refresh the count).
+  function updateDecisionsCounter() {
+    const counter = document.getElementById('decisionsCounter');
+    if (!counter) return;
+    const out = document.getElementById('output');
+    const marks = out ? out.querySelectorAll('.cidra-mark') : [];
+    const total = marks.length;
+    if (total === 0) {
+      counter.hidden = true;
+      counter.removeAttribute('data-progress');
+      return;
+    }
+    let acted = 0;
+    for (let i = 0; i < marks.length; i++) {
+      if ((marks[i].getAttribute('data-state') || '☐') !== '☐') acted++;
+    }
+    counter.hidden = false;
+    counter.textContent = 'Decisions ' + acted + '/' + total;
+    counter.setAttribute('data-progress', (acted === total && total > 0) ? 'complete' : 'partial');
+    counter.title = (acted === total)
+      ? 'All ' + total + ' decisions marked.'
+      : (total - acted) + ' decision' + ((total - acted) === 1 ? '' : 's') + ' remaining.';
+  }
+
   // Rebuild source markdown with the user's decisions applied. Walks the
   // source string character-by-character; every time we hit a mark
   // character, we replace it with the state from the Nth span (in DOM
@@ -2105,6 +2169,8 @@ footer { unicode-bidi: isolate; }
       empty.appendChild(p);
     });
     out.appendChild(empty);
+    // No marks exist in the empty state — hide the toolbar progress chip.
+    if (typeof updateDecisionsCounter === 'function') updateDecisionsCounter();
   }
 
   function render(md, fileName) {
@@ -2267,6 +2333,10 @@ footer { unicode-bidi: isolate; }
         }
       }
     }
+
+    // Refresh the toolbar progress counter — marks may have been re-wrapped
+    // and the count may have changed (new file, re-rendered, etc.).
+    updateDecisionsCounter();
 
     // -----------------------------------------------------------------------
     // POST-RENDER: Mermaid diagrams + KaTeX math.
@@ -4201,6 +4271,7 @@ footer { unicode-bidi: isolate; }
         if (!span) return;
         e.preventDefault();
         cycleMarkState(span);
+        updateDecisionsCounter();
       });
       outEl.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -4208,6 +4279,7 @@ footer { unicode-bidi: isolate; }
         if (!span) return;
         e.preventDefault();
         cycleMarkState(span);
+        updateDecisionsCounter();
       });
     }
 
@@ -4290,6 +4362,7 @@ footer { unicode-bidi: isolate; }
         Banner.clear('unsanitized-mode');
         Banner.clear('unsanitized-mode-active');
         ExportMenu.refresh();
+        if (typeof updateDecisionsCounter === 'function') updateDecisionsCounter();
       });
     }
 
