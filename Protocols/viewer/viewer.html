@@ -740,6 +740,16 @@ html[data-theme="dark"] .export-menu-root .menu-item:focus-visible:not([aria-dis
   text-align: left;
   line-height: 1.45;
 }
+/* Unlabeled code fences (```...``` with no language tag) get dir="auto" from
+   the renderer so a Hebrew prose checklist or any RTL content inside a
+   fence reads correctly. revert lets the HTML dir attribute take effect
+   (the .md pre rule above otherwise forces direction:ltr); text-align:start
+   aligns to the leading edge so RTL content sits on the right, LTR on the
+   left. */
+.md pre[dir="auto"] {
+  direction: revert;
+  text-align: start;
+}
 .md pre code {
   background: none;
   padding: 0;
@@ -1782,7 +1792,15 @@ footer { unicode-bidi: isolate; }
       if (window.__cidraMirrorHE) {
         highlighted = wrapHebrewInCommentSpans(highlighted);
       }
-      return '<pre dir="ltr"><code class="hljs language-' + escapeHtml(lang) + '">' +
+      // Direction policy for code fences:
+      //   - lang = explicit (cobol/python/yaml/etc.) → dir="ltr" (real code)
+      //   - lang = plaintext (no fence info-string)  → dir="auto"
+      //     so unlabeled fences containing prose (Hebrew checklists, ASCII
+      //     diagrams, mixed content) get browser bidi auto-detection from
+      //     the first-strong character. The CSS rule .md pre[dir="auto"]
+      //     reverts direction so the HTML attribute actually takes effect.
+      const dirAttr = (lang === 'plaintext') ? 'auto' : 'ltr';
+      return '<pre dir="' + dirAttr + '"><code class="hljs language-' + escapeHtml(lang) + '">' +
              highlighted + '</code></pre>';
     };
 
