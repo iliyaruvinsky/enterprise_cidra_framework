@@ -751,6 +751,41 @@ html[data-theme="dark"] .export-menu-root .menu-item:focus-visible:not([aria-dis
   text-align: right !important;
   unicode-bidi: isolate !important;
 }
+
+/* Interactive decision marks. The post-render walk wraps every
+   ☐ / ✓ / ✗ / ❓ outside of code blocks in a clickable span. Click cycles
+   ☐ → ✓ → ✗ → ❓ → ☐. The "Export decisions" menu item rebuilds the
+   source markdown with the user's clicks applied and downloads it. */
+.cidra-mark {
+  cursor: pointer;
+  user-select: none;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 4px;
+  font-size: 1.05em;
+  line-height: 1;
+  display: inline-block;
+  transition: background-color 0.12s ease, transform 0.06s ease;
+  border: 1px solid transparent;
+}
+.cidra-mark:hover {
+  background-color: rgba(0,0,0,0.06);
+  border-color: rgba(0,0,0,0.12);
+}
+.cidra-mark:active {
+  transform: scale(0.92);
+}
+.cidra-mark[data-state="✓"] { color: #1a7f37; font-weight: bold; }
+.cidra-mark[data-state="✗"] { color: #cf222e; font-weight: bold; }
+.cidra-mark[data-state="❓"] { color: #9a6700; font-weight: bold; }
+.cidra-mark[data-state="☐"] { color: var(--muted); }
+html[data-theme="dark"] .cidra-mark:hover {
+  background-color: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.16);
+}
+html[data-theme="dark"] .cidra-mark[data-state="✓"] { color: #3fb950; }
+html[data-theme="dark"] .cidra-mark[data-state="✗"] { color: #f85149; }
+html[data-theme="dark"] .cidra-mark[data-state="❓"] { color: #d29922; }
 .md pre code {
   background: none;
   padding: 0;
@@ -1213,6 +1248,14 @@ footer { unicode-bidi: isolate; }
           <span class="menu-item-desc">Word document</span>
         </button>
         <span id="miExportDocxReason" class="sr-only" hidden></span>
+        <button role="menuitem" type="button" tabindex="-1"
+                id="miExportDecisions" class="menu-item"
+                data-export="decisions"
+                aria-describedby="miExportDecisionsReason">
+          <span class="menu-item-name">Export decisions</span>
+          <span class="menu-item-desc">Markdown with ☐ → ✓/✗/❓ marks applied</span>
+        </button>
+        <span id="miExportDecisionsReason" class="sr-only" hidden></span>
       </div>
       <hr role="separator" class="menu-divider" aria-orientation="horizontal">
       <div id="grpExportTab" class="menu-group-label">Tabular formats</div>
@@ -1744,6 +1787,115 @@ footer { unicode-bidi: isolate; }
   }
 
   // ---------------------------------------------------------------------------
+  // Interactive decision marks (☐ / ✓ / ✗ / ❓).
+  //
+  // Post-render walk: every occurrence of one of these characters outside of
+  // <code> and <pre> blocks (so we never wrap a mark that's part of code
+  // sample text) becomes a clickable <span class="cidra-mark" data-state="X">.
+  // Click cycles ☐ → ✓ → ✗ → ❓ → ☐.
+  //
+  // Export: walk the source markdown character-by-character, replace each
+  // ☐/✓/✗/❓ in order with the current dataset.state from the corresponding
+  // span. The DOM-to-source mapping is positional (Nth mark in source = Nth
+  // span in render order); the renderer preserves character order, so this
+  // is robust as long as the rendered DOM still has every original mark.
+  // ---------------------------------------------------------------------------
+  const CIDRA_MARK_CHARS = '☐✓✗❓';
+  const CIDRA_MARK_RE    = /[☐✓✗❓]/g;
+  const CIDRA_MARK_CYCLE = ['☐', '✓', '✗', '❓'];
+
+  function isInsideCodeOrPre(node) {
+    while (node && node.nodeType === 1 /* ELEMENT */) {
+      const tag = node.tagName;
+      if (tag === 'CODE' || tag === 'PRE') return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function wrapDecisionMarks(container) {
+    if (!container) return;
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function (n) {
+          if (!n.nodeValue || !CIDRA_MARK_CHARS.split('').some(function(c){return n.nodeValue.indexOf(c) !== -1;})) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (isInsideCodeOrPre(n.parentNode)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+    const targets = [];
+    let n;
+    while ((n = walker.nextNode())) targets.push(n);
+
+    targets.forEach(function (node) {
+      const text = node.nodeValue;
+      const frag = document.createDocumentFragment();
+      let lastEnd = 0;
+      text.replace(CIDRA_MARK_RE, function (mark, offset) {
+        if (offset > lastEnd) {
+          frag.appendChild(document.createTextNode(text.slice(lastEnd, offset)));
+        }
+        const span = document.createElement('span');
+        span.className = 'cidra-mark';
+        span.setAttribute('data-state', mark);
+        span.setAttribute('role', 'button');
+        span.setAttribute('tabindex', '0');
+        span.setAttribute('aria-label',
+          mark === '☐' ? 'Click to mark' :
+          mark === '✓' ? 'Marked yes (click to cycle)' :
+          mark === '✗' ? 'Marked no (click to cycle)' :
+                         'Marked needs-check (click to cycle)');
+        span.textContent = mark;
+        frag.appendChild(span);
+        lastEnd = offset + mark.length;
+        return mark;
+      });
+      if (lastEnd < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+      }
+      node.parentNode.replaceChild(frag, node);
+    });
+  }
+
+  function cycleMarkState(span) {
+    if (!span) return;
+    const cur = span.getAttribute('data-state') || '☐';
+    const idx = CIDRA_MARK_CYCLE.indexOf(cur);
+    const next = CIDRA_MARK_CYCLE[(idx + 1) % CIDRA_MARK_CYCLE.length];
+    span.setAttribute('data-state', next);
+    span.textContent = next;
+  }
+
+  // Rebuild source markdown with the user's decisions applied. Walks the
+  // source string character-by-character; every time we hit a mark
+  // character, we replace it with the state from the Nth span (in DOM
+  // order). Falls back to the original character if the count mismatches.
+  function exportDecisionsMd(sourceMd, container) {
+    if (sourceMd == null) return '';
+    const spans = container.querySelectorAll('.cidra-mark');
+    const states = Array.prototype.map.call(spans, function (s) {
+      return s.getAttribute('data-state') || '☐';
+    });
+    let out = '';
+    let markIdx = 0;
+    for (let i = 0; i < sourceMd.length; i++) {
+      const c = sourceMd.charAt(i);
+      if (CIDRA_MARK_CHARS.indexOf(c) !== -1) {
+        out += (markIdx < states.length) ? states[markIdx] : c;
+        markIdx++;
+      } else {
+        out += c;
+      }
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // 4. CONFIGURE MARKED + RENDERER — runs after marked loads (CDN or vendor).
   // Returns true on success, false if marked is missing or smoke test failed.
   // ---------------------------------------------------------------------------
@@ -2069,6 +2221,14 @@ footer { unicode-bidi: isolate; }
     });
 
     // -----------------------------------------------------------------------
+    // POST-RENDER: wrap decision marks (☐ / ✓ / ✗ / ❓) in clickable spans.
+    // Found anywhere outside <code>/<pre> blocks (so editing actual code
+    // text never cycles). Click handler cycles state. "Export decisions"
+    // menu item rebuilds the source markdown with the user's clicks applied.
+    // -----------------------------------------------------------------------
+    wrapDecisionMarks(out);
+
+    // -----------------------------------------------------------------------
     // POST-RENDER: Mermaid diagrams + KaTeX math.
     //
     // Both libraries walk the rendered DOM and mutate in place. They run
@@ -2392,11 +2552,12 @@ footer { unicode-bidi: isolate; }
     // The exportMarkdown / exportHtml / exportDocx / exportCsv / exportXlsx
     // functions are unchanged; the menu only changes the event source.
     const handlerMap = {
-      md:   function () { return exportMarkdown(); },
-      html: function () { return exportHtml(); },
-      docx: function () { return exportDocx(); },
-      csv:  function () { return exportCsv(); },
-      xlsx: function () { return exportXlsx(); },
+      md:        function () { return exportMarkdown(); },
+      html:      function () { return exportHtml(); },
+      docx:      function () { return exportDocx(); },
+      decisions: function () { return exportDecisions(); },
+      csv:       function () { return exportCsv(); },
+      xlsx:      function () { return exportXlsx(); },
     };
 
     function $id(id) { return document.getElementById(id); }
@@ -2769,6 +2930,18 @@ footer { unicode-bidi: isolate; }
       setItem('miExportMd',  hasDoc && !busy,
           hasDoc ? 'Export current document as .md' : 'Load a document first.',
           hasDoc ? null : 'Disabled: load a document first.');
+
+      // Decisions export — same gating as .md (just needs a doc loaded).
+      // Tooltip notes that the decisions menu is meaningless without a doc
+      // and helpful when the doc has interactive marks the user has clicked.
+      const outEl = document.getElementById('output');
+      const markCount = outEl ? outEl.querySelectorAll('.cidra-mark').length : 0;
+      let decTip;
+      if (!hasDoc)         decTip = 'Load a document first.';
+      else if (!markCount) decTip = 'Document has no decision marks (☐/✓/✗/❓) to export.';
+      else                 decTip = 'Download the source markdown with your ☐ → ✓/✗/❓ clicks applied (' + markCount + ' mark' + (markCount === 1 ? '' : 's') + ' total).';
+      setItem('miExportDecisions', hasDoc && markCount > 0 && !busy, decTip,
+          (hasDoc && markCount > 0) ? null : 'Disabled: ' + decTip);
 
       setItem('miExportHtml', hasDoc && !busy,
           hasDoc ? 'Export current document as self-contained .html' : 'Load a document first.',
@@ -3390,6 +3563,42 @@ footer { unicode-bidi: isolate; }
     }
   }
 
+  // Export the source markdown with the user's decision-mark clicks applied.
+  // Walks State.lastRawMd character-by-character; the Nth ☐/✓/✗/❓ in the
+  // source is replaced by the current data-state of the Nth .cidra-mark in
+  // the rendered DOM. This preserves all surrounding markdown verbatim.
+  function exportDecisions() {
+    if (!beginExport()) return;
+    let blobUrl = null;
+    try {
+      if (!confirmUnsafeIfNeeded('md')) return;
+      const md = State.lastRawMd;
+      if (md == null || !md.trim()) {
+        Banner.warning('export-empty', [{text: 'Nothing to export — load a document first.'}]);
+        return;
+      }
+      const out = document.getElementById('output');
+      const marked = exportDecisionsMd(md, out);
+      // Insert a "_marked" suffix before the extension so the user can keep
+      // the original alongside their decisions copy.
+      let basename = (State.lastFileName || 'document.md').replace(/\.(md|markdown|txt)$/i, '');
+      basename = basename + '_decisions';
+      const blob = new Blob([marked], {type: 'text/markdown;charset=utf-8'});
+      const filename = buildExportFilename(basename + '.md', 'md');
+      blobUrl = triggerDownload(blob, filename);
+      const total = (out.querySelectorAll('.cidra-mark') || []).length;
+      const acted = Array.prototype.filter.call(
+        out.querySelectorAll('.cidra-mark'),
+        function (s) { return (s.getAttribute('data-state') || '☐') !== '☐'; }
+      ).length;
+      showToast('Exported ' + filename + ' (' + acted + ' of ' + total + ' marked)');
+    } catch (err) {
+      Banner.error('export-decisions', [{text: 'Decisions export failed: ' + String(err && err.message || err)}]);
+    } finally {
+      endExport(blobUrl);
+    }
+  }
+
   function exportHtml() {
     if (!beginExport()) return;
     let blobUrl = null;
@@ -3941,6 +4150,26 @@ footer { unicode-bidi: isolate; }
   // ===========================================================================
   function wireUI() {
     const $ = function (id) { return document.getElementById(id); };
+
+    // Decision-mark click delegation. Attached once to the output container;
+    // any post-render wrapDecisionMarks call wires up new spans automatically
+    // because the listener is on a parent, not on each span.
+    const outEl = $('output');
+    if (outEl) {
+      outEl.addEventListener('click', function (e) {
+        const span = e.target.closest && e.target.closest('.cidra-mark');
+        if (!span) return;
+        e.preventDefault();
+        cycleMarkState(span);
+      });
+      outEl.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const span = e.target.closest && e.target.closest('.cidra-mark');
+        if (!span) return;
+        e.preventDefault();
+        cycleMarkState(span);
+      });
+    }
 
     const filePicker = $('filePicker');
     if (filePicker) {
