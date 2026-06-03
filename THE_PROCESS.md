@@ -3,6 +3,8 @@ dir: ltr
 documentation_language: english
 ---
 
+<p align="left"><img src="Design/Logo/logo.svg" alt="B+CIDRA" width="200"></p>
+
 # B+CIDRA — The Process, End to End
 
 > **From legacy source code to a documented, modernized, or rewritten system.**

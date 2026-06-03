@@ -1,3 +1,5 @@
+<p align="left"><img src="Design/Logo/logo.svg" alt="B+CIDRA" width="200"></p>
+
 # CIDRA Project Runbook
 ## Starting a new CIDRA documentation project from scratch
 

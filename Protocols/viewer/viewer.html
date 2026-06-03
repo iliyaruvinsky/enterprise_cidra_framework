@@ -157,7 +157,13 @@
      Enforce clickjacking protection at the HTTP-header layer instead. -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net/npm/; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'none'; upgrade-insecure-requests">
-<title lang="en" dir="ltr">CIDRA Documentation Viewer</title>
+<title lang="en" dir="ltr">B+CIDRA Documentation Viewer</title>
+<!-- Brand favicon — the dark "B+" mark on the brand yellow (#FEEC41).
+     Relative path resolves from Protocols/viewer/ up to Design/Logo/.
+     Inline data URL fallback below ensures rendering on file:// even
+     if the relative path resolves differently in some browsers. -->
+<link rel="icon" type="image/svg+xml" href="../../Design/Logo/favicon.svg">
+<link rel="alternate icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="%231A1A1A"/><text x="50" y="64" font-family="system-ui,sans-serif" font-size="44" font-weight="900" fill="%23FEEC41" text-anchor="middle">B%2B</text></svg>'>
 
 <!-- =========================================================================
      CIDRA Documentation Viewer
@@ -379,6 +385,16 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   letter-spacing: 0.05em;
+}
+.toolbar .brand-logo {
+  display: block;
+  flex-shrink: 0;
+}
+.toolbar .title-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 .toolbar button, .toolbar label.file-picker {
   background: var(--bg);
@@ -1221,8 +1237,20 @@ footer { unicode-bidi: isolate; }
      dir="rtl" lang="he" — only the chrome is LTR-en. -->
 <div class="toolbar" dir="ltr" lang="en">
   <div class="title">
-    <span lang="en" dir="ltr">CIDRA Documentation Viewer</span>
-    <span class="badge" lang="en">B+CIDRA</span>
+    <!-- Brand mark+wordmark lockup (Logo E, brand yellow #FEEC41).
+         Inline SVG so it renders identically on file:// regardless of
+         where viewer.html is opened from. Sourced from
+         C:\My_AI\enterprise_cidra_framework\Design\Logo\logo.svg. -->
+    <svg class="brand-logo" viewBox="0 0 280 80" width="126" height="36"
+         role="img" aria-label="B+CIDRA">
+      <rect width="280" height="80" rx="12" ry="12" fill="#FEEC41"/>
+      <rect x="15" y="15" width="50" height="50" rx="8" ry="8" fill="#1A1A1A"/>
+      <text x="40" y="50" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+            font-size="22" font-weight="900" fill="#FEEC41" text-anchor="middle">B+</text>
+      <text x="80" y="50" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+            font-size="30" font-weight="900" fill="#1A1A1A" letter-spacing="1">CIDRA</text>
+    </svg>
+    <span class="title-sub" lang="en" dir="ltr">Documentation Viewer</span>
   </div>
 
   <label class="file-picker">
@@ -2428,7 +2456,13 @@ footer { unicode-bidi: isolate; }
           window.mermaid.initialize({
             startOnLoad: false,
             theme: theme,
-            securityLevel: 'strict',
+            // 'antiscript' allows raw HTML in Mermaid node labels (so we can
+            // embed SVG icons via <img src="data:image/svg+xml;base64,...">
+            // for the journey diagrams in ROADMAP.md / THE_PROCESS.md) while
+            // still blocking <script> tags. Stronger than 'loose', weaker than
+            // 'strict'. Required by the brand-icon embedding work that
+            // replaced the AI-default 📝🔍📄✅📦 emoji in the Mermaid diagrams.
+            securityLevel: 'antiscript',
             fontFamily: 'inherit'
           });
           // mermaid.run() returns a promise; catch to keep render() sync-safe.
@@ -3798,8 +3832,27 @@ footer { unicode-bidi: isolate; }
         /@supports[^{]*\{[\s\S]*?\}\s*\}/g, '');
     }
     // Minimal additional styling for self-contained body padding (the
-    // original viewer relies on .content wrapper).
-    const extra = 'body{max-width:900px;margin:0 auto;padding:24px;}';
+    // original viewer relies on .content wrapper). Add the brand header
+    // styles inline so they survive even if the broader CSS gets stripped
+    // by Word's parser in DOCX-bound exports.
+    const extra =
+      'body{max-width:900px;margin:0 auto;padding:24px;}' +
+      '.brand-header{display:flex;align-items:center;gap:12px;padding-bottom:16px;margin-bottom:24px;border-bottom:1px solid #e5e5e5;}' +
+      '.brand-header svg{flex-shrink:0;}' +
+      '.brand-header .brand-title{font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:500;color:#555;}';
+    // The brand lockup — the canonical B+CIDRA logo (see
+    // Design/Logo/logo.svg) inlined so the exported .html / .docx file is
+    // fully self-contained with no external asset dependencies.
+    const brandHeader =
+      '<div class="brand-header" dir="ltr" lang="en">' +
+        '<svg viewBox="0 0 280 80" width="112" height="32" role="img" aria-label="B+CIDRA">' +
+          '<rect width="280" height="80" rx="12" ry="12" fill="#FEEC41"/>' +
+          '<rect x="15" y="15" width="50" height="50" rx="8" ry="8" fill="#1A1A1A"/>' +
+          '<text x="40" y="50" font-family="system-ui,sans-serif" font-size="22" font-weight="900" fill="#FEEC41" text-anchor="middle">B+</text>' +
+          '<text x="80" y="50" font-family="system-ui,sans-serif" font-size="30" font-weight="900" fill="#1A1A1A" letter-spacing="1">CIDRA</text>' +
+        '</svg>' +
+        '<span class="brand-title">' + escapeHtml(title) + '</span>' +
+      '</div>';
     // Build the document. We use string concat (no innerHTML) — the
     // contentNode HTML is already sanitized (it came from the live DOM
     // which DOMPurify has already touched), and we are not parsing it.
@@ -3810,7 +3863,7 @@ footer { unicode-bidi: isolate; }
       '<head><meta charset="utf-8">' +
       '<title>' + escapeHtml(title) + '</title>' +
       '<style>' + css + extra + '</style></head>' +
-      '<body><div class="md">';
+      '<body>' + brandHeader + '<div class="md">';
     const tail = '</div></body></html>';
     return head + contentNode.innerHTML + tail;
   }
