@@ -2079,6 +2079,20 @@ footer { unicode-bidi: isolate; }
 
     renderer.link = function(href, title, text) {
       const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+      // Detect in-document .md / .markdown / .txt links. The browser
+      // tries to navigate to file:///.../viewer/<basename>.md which fails
+      // (the sibling file usually doesn't live next to viewer.html).
+      // Mark these links so the click delegate in wireUI intercepts and
+      // opens via showOpenFilePicker (FSA) or the existing file input
+      // (universal fallback). Web URLs and mailto:/tel: keep the normal
+      // target=_blank behavior.
+      const lower = (href || '').toLowerCase();
+      const isMdLink = /\.(md|markdown|txt)(?:[?#]|$)/.test(lower) &&
+                       !/^(https?:|mailto:|tel:|javascript:|data:)/.test(lower);
+      if (isMdLink) {
+        return '<bdi><a href="' + escapeHtml(href) + '"' + titleAttr +
+               ' data-md-link="' + escapeHtml(href) + '">' + text + '</a></bdi>';
+      }
       return '<bdi><a href="' + escapeHtml(href) + '"' + titleAttr +
              ' target="_blank" rel="noopener noreferrer">' + text + '</a></bdi>';
     };
@@ -2494,6 +2508,53 @@ footer { unicode-bidi: isolate; }
       return { text: new TextDecoder('utf-8').decode(slice), encoding: 'utf-8 (fallback)' };
     }
   }
+  // Open a sibling .md / .markdown / .txt file via click on a rendered
+  // hyperlink. The browser would otherwise try file:///.../viewer/<basename>
+  // and 404. Strategy:
+  //   1. If File System Access API is available (Chromium): call
+  //      showOpenFilePicker — the user gets a native file dialog with
+  //      the basename pre-suggested. They navigate to the target,
+  //      we load it via the existing loadFile pipeline.
+  //   2. Otherwise: trigger the existing #filePicker input click. The
+  //      OS file picker opens (remembers the last-used directory in
+  //      most browsers, which is usually the directory the user just
+  //      came from), they pick the file, change event fires loadFile.
+  // Either path goes through loadFile so the entire render pipeline,
+  // FSA handle recall, change-watcher seeding, etc. apply uniformly.
+  function openMarkdownLink(href) {
+    if (!href) return;
+    const basename = String(href).replace(/[?#].*$/, '').split(/[\\/]/).pop() || 'file.md';
+
+    if (typeof window.showOpenFilePicker === 'function') {
+      window.showOpenFilePicker({
+        suggestedName: basename,
+        types: [{
+          description: 'Markdown',
+          accept: { 'text/markdown': ['.md', '.markdown', '.txt'] }
+        }],
+        multiple: false
+      }).then(function (handles) {
+        if (!handles || !handles[0]) return;
+        return handles[0].getFile().then(function (file) {
+          loadFile(file);
+        });
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return; // user cancelled
+        // eslint-disable-next-line no-console
+        console.warn('[viewer] showOpenFilePicker failed; falling back:', err);
+        showToast('Pick ' + basename + ' to open');
+        const fp = document.getElementById('filePicker');
+        if (fp) fp.click();
+      });
+      return;
+    }
+
+    // No FSA — universal fallback via the file input.
+    showToast('Pick ' + basename + ' to open');
+    const fp = document.getElementById('filePicker');
+    if (fp) fp.click();
+  }
+
   function loadFile(file) {
     if (!file) return;
     // Reset per-file unsanitized opt-in BEFORE doing anything else.
@@ -4652,11 +4713,23 @@ footer { unicode-bidi: isolate; }
     const outEl = $('output');
     if (outEl) {
       outEl.addEventListener('click', function (e) {
+        // 1. Decision-mark click — cycle state.
         const span = e.target.closest && e.target.closest('.cidra-mark');
-        if (!span) return;
-        e.preventDefault();
-        cycleMarkState(span);
-        updateDecisionsCounter();
+        if (span) {
+          e.preventDefault();
+          cycleMarkState(span);
+          updateDecisionsCounter();
+          return;
+        }
+        // 2. In-document .md link click — intercept and open via FSA /
+        //    file picker fallback. Without this, the browser navigates
+        //    to file:///.../viewer/<basename>.md and 404s.
+        const mdLink = e.target.closest && e.target.closest('a[data-md-link]');
+        if (mdLink) {
+          e.preventDefault();
+          openMarkdownLink(mdLink.getAttribute('data-md-link'));
+          return;
+        }
       });
       outEl.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
