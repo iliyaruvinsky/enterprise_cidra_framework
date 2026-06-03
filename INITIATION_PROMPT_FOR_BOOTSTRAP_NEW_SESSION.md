@@ -17,16 +17,21 @@ This is NOT only for emergency low-context closeouts. It also covers:
 Update the "Current state" block below before opening the next session.
 The fresh agent reads this block first.
 
-**Current state (last updated: 2026-06-02)**
-- `main` tip: `c782035` — Viewer #3: external-change watcher via visibilitychange + focus
+**Current state (last updated: 2026-06-03)**
+- `main` tip: `12fc46d` — B+CIDRA branding rollout (logo, favicon, real SVG icons replacing AI emoji)
 - Active long-lived branches:
     - `refactor/modules`: `145ae84` — viewer.html ES-module split, baseline 9/9 PASS locked, execution pending. Resume doc at `Protocols/viewer/REFACTOR_RESUME.md`.
 - Open items (in priority order):
     1. **chiyuv_yashir (`C:\projects\chiyuv_yashir\`)** — Mode 1 (B+CID) run paused at the BRN_R2 customer-acknowledgment gate. Three 🔴 critical gaps in `MISSING_INPUTS.md` await customer marks: (a) CA 2E (Synon) action-diagram model, (b) ~57 missing sibling-program sources (XFKB/UPKB/UPRB families), (c) callers / runtime triggers. Iliya is communicating these to the client. Once marked, update `BRAINSTORM_OUTPUT.yaml.acknowledged_gaps` and flip `ready_for_chunker: true`, then `/chunk`.
     2. **C/C++ dry-run** — fresh project to validate the post-AS/400 framework end-to-end. Blocked on source-path delivery from Iliya. When path arrives, propose `-ProjectFolder` + `-ComponentId`, run `Scripts\bootstrap.ps1` (no `-SourceRenameTo` for C/C++; `-ForceFramework` not needed post-F7 sentinel relocation).
-    3. **`refactor/modules` execution** — viewer.html (~4800 lines) splits into 12 native ES modules (no build step). 7 dependency-ordered extraction waves + 1 final-assembly wave. Estimated 1 working week. Safety net (`_refactor_safety_net.py`) must stay at 9/9 PASS after every wave. Full plan in `Protocols/viewer/REFACTOR_RESUME.md`.
+    3. **`refactor/modules` execution** — viewer.html (~5000 lines after today's branding additions) splits into 12 native ES modules (no build step). 7 dependency-ordered extraction waves + 1 final-assembly wave. Estimated 1 working week. Safety net (`_refactor_safety_net.py`) must stay at 9/9 PASS after every wave. Full plan in `Protocols/viewer/REFACTOR_RESUME.md`.
+    4. **`THE_PROCESS.md` Mermaid icon replacement** (deferred from today's branding pass) — 5 diagrams still use the AI-default emoji set (📘📗📕📝🔍📄✅📦). The 5 stage-icon mapping (info/search/reporting/ok/export) doesn't cover the 3 mode infographics (📘 documentation / 📗 + modernization plan / 📕 + new codebase) or the decision tree. Needs design call: commission additional "deliverable" icons OR drop emoji and rely on color-coded boxes alone.
 - Parked / blocked-external: Customer-facing copy of `MISSING_INPUTS.md` — once Iliya receives marked answers from Maccabi, ingest back into `BRAINSTORM_OUTPUT.yaml`. No technical blocker; waiting on human turnaround.
-- What shipped on 2026-06-02 (most recent → oldest):
+- What shipped on 2026-06-03 (most recent → oldest):
+    - `12fc46d` — **B+CIDRA branding rollout.** Logo E + brand yellow `#FEEC41` chosen from 5 mocked alternatives. Files at `Design/Logo/`: `logo.svg` (canonical lockup), `favicon.svg`, `logo_mark_only.svg`, plus 5 alternatives kept for posterity. Viewer gets favicon (relative + inline data-URL fallback), toolbar inline lockup SVG at 126x36 + "Documentation Viewer" subtitle, HTML-export brand header injection, Mermaid `securityLevel: 'antiscript'` (was `'strict'`) to allow inline base64 SVG icons in node labels. `THE_PROCESS.md` / `README.md` / `RUNBOOK.md` get `<img src="Design/Logo/logo.svg">` reference. `ROADMAP.md.tmpl` / `MISSING_INPUTS.md.tmpl` get inline `<svg>` (self-contained per project — they ship outside the repo). Journey diagrams in ROADMAP templates + chiyuv_yashir live files: emoji `📝🔍📄✅📦` replaced with real SVG icons from `Design/Icons/` (info / search / reporting / ok / export), base64-inlined via `<img src="data:image/svg+xml;base64,...">`. Active stage classDef recolored from generic blue `#1f6feb` to brand yellow `#FEEC41` with black text. Visually verified via Playwright (toolbar mark, document brand header, 5 stage icons rendered, RTL Hebrew preserved).
+    - `9d1562d` — **Viewer: intercept `.md` / `.markdown` / `.txt` link clicks.** `renderer.link` marks them with `data-md-link` and drops `target="_blank"`. Click delegate calls `openMarkdownLink(href)` which tries `showOpenFilePicker` (FSA, with `suggestedName`) if available, else triggers `#filePicker.click()`. Eliminates the `file://` 404 page customers were hitting when clicking sibling-file links in ROADMAP (e.g. `MISSING_INPUTS.md` link tried to open `file:///.../Protocols/viewer/MISSING_INPUTS.md`).
+    - `1dde571` — **Bootstrap-for-fresh-session initiation prompt.** This file (`INITIATION_PROMPT_FOR_BOOTSTRAP_NEW_SESSION.md`). Adapted from the XSODUS 4-agent template to B+CIDRA single-agent flow.
+- What shipped on 2026-06-02 (prior day, most recent → oldest):
     - `145ae84` (on `refactor/modules`) — Refactor branch setup: 9-scenario safety net + REFACTOR_RESUME.md
     - `c782035` — Viewer #3: external-change watcher via visibilitychange + focus
     - `0cd37b9` — Viewer #1: FSA direct save-back with IndexedDB-persisted file handle
@@ -205,4 +210,4 @@ Do NOT continue feature work during a closeout / bootstrap-preparation pass. Foc
 
 *Drafted from the XSODUS 4-agent initiation template (2026-05-29 revision).*
 *Adapted for B+CIDRA single-agent flow against `C:\My_AI\enterprise_cidra_framework`.*
-*Last edited: 2026-06-02.*
+*Last edited: 2026-06-03.*
