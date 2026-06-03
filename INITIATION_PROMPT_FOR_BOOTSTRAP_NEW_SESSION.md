@@ -17,10 +17,17 @@ This is NOT only for emergency low-context closeouts. It also covers:
 Update the "Current state" block below before opening the next session.
 The fresh agent reads this block first.
 
-**Current state (last updated: 2026-06-03)**
-- `main` tip: `12fc46d` — B+CIDRA branding rollout (logo, favicon, real SVG icons replacing AI emoji)
+**Current state (last updated: 2026-06-03, refresh #2)**
+- `main` tip: `56c60f6` — *Bootstrap: refresh Current state block* — **UNPUSHED (HEAD is 1 commit ahead of `origin/main`).** The Claude Code auto-mode classifier blocks direct pushes to the default branch; landing it needs owner authorization (see Section 7). Last **feature** tip beneath it: `12fc46d` — B+CIDRA branding rollout (logo, favicon, real SVG icons replacing AI emoji).
 - Active long-lived branches:
     - `refactor/modules`: `145ae84` — viewer.html ES-module split, baseline 9/9 PASS locked, execution pending. Resume doc at `Protocols/viewer/REFACTOR_RESUME.md`.
+- **Session pivot (2026-06-03):** framework development now runs from a **framework-rooted** Claude Code session (cwd = `C:\My_AI\enterprise_cidra_framework`). The prior session ran from a *consumer* applicative project on a Google Drive sync path and reached the framework only via `git -C` indirection — safe for git, a footgun for file edits. See the new **Workspace discipline** directive in Section 3.
+- **Working-tree state at this handoff** (all untracked — confirm with `git status --short` from the framework root):
+    - `Design/Logo/logo_v2.svg`, `Design/Logo/logo_v2_on_yellow.svg` — active logo iteration (owner). Commit when branding settles; ties into open item #4.
+    - `Design/Icons/` — 23 SVG **source** assets. ⚠️ `12fc46d` base64-inlines 5 of these (info / search / reporting / ok / export) into shipped files, but the sources are **not yet versioned**. Commit once stable so the framework is self-contained.
+    - `START_WITH_THIS_DOCUMENT.docx` (+ its `~$…docx` Word lock) — binary intake doc, was open in Word. Owner disposition; the `~$` lock file must **never** be committed.
+    - `Protocols/viewer/_*.py`, `Protocols/_test_screenshots/`, `Protocols/viewer/_test_screenshots/*.png` — local-only probe artifacts (Section 4). Stay untracked — correct as-is.
+- **Immediate first action (before any new work):** land the unpushed handoff commit(s) on `origin/main` — owner-authorized push, or owner adds a `git push origin main` permission rule and the agent retries. Do not loop-retry the push (Section 7).
 - Open items (in priority order):
     1. **chiyuv_yashir (`C:\projects\chiyuv_yashir\`)** — Mode 1 (B+CID) run paused at the BRN_R2 customer-acknowledgment gate. Three 🔴 critical gaps in `MISSING_INPUTS.md` await customer marks: (a) CA 2E (Synon) action-diagram model, (b) ~57 missing sibling-program sources (XFKB/UPKB/UPRB families), (c) callers / runtime triggers. Iliya is communicating these to the client. Once marked, update `BRAINSTORM_OUTPUT.yaml.acknowledged_gaps` and flip `ready_for_chunker: true`, then `/chunk`.
     2. **C/C++ dry-run** — fresh project to validate the post-AS/400 framework end-to-end. Blocked on source-path delivery from Iliya. When path arrives, propose `-ProjectFolder` + `-ComponentId`, run `Scripts\bootstrap.ps1` (no `-SourceRenameTo` for C/C++; `-ForceFramework` not needed post-F7 sentinel relocation).
@@ -28,6 +35,7 @@ The fresh agent reads this block first.
     4. **`THE_PROCESS.md` Mermaid icon replacement** (deferred from today's branding pass) — 5 diagrams still use the AI-default emoji set (📘📗📕📝🔍📄✅📦). The 5 stage-icon mapping (info/search/reporting/ok/export) doesn't cover the 3 mode infographics (📘 documentation / 📗 + modernization plan / 📕 + new codebase) or the decision tree. Needs design call: commission additional "deliverable" icons OR drop emoji and rely on color-coded boxes alone.
 - Parked / blocked-external: Customer-facing copy of `MISSING_INPUTS.md` — once Iliya receives marked answers from Maccabi, ingest back into `BRAINSTORM_OUTPUT.yaml`. No technical blocker; waiting on human turnaround.
 - What shipped on 2026-06-03 (most recent → oldest):
+    - `56c60f6` — **Bootstrap: refresh Current state block** (this handoff). Committed **locally only**; push to `origin/main` is **pending owner authorization** (harness blocks direct default-branch pushes — Section 7). A refresh #2 of this same file (framework-rooted pivot + working-tree handoff + new directives) sits **uncommitted in the working tree** on top of it — commit both together when pushing.
     - `12fc46d` — **B+CIDRA branding rollout.** Logo E + brand yellow `#FEEC41` chosen from 5 mocked alternatives. Files at `Design/Logo/`: `logo.svg` (canonical lockup), `favicon.svg`, `logo_mark_only.svg`, plus 5 alternatives kept for posterity. Viewer gets favicon (relative + inline data-URL fallback), toolbar inline lockup SVG at 126x36 + "Documentation Viewer" subtitle, HTML-export brand header injection, Mermaid `securityLevel: 'antiscript'` (was `'strict'`) to allow inline base64 SVG icons in node labels. `THE_PROCESS.md` / `README.md` / `RUNBOOK.md` get `<img src="Design/Logo/logo.svg">` reference. `ROADMAP.md.tmpl` / `MISSING_INPUTS.md.tmpl` get inline `<svg>` (self-contained per project — they ship outside the repo). Journey diagrams in ROADMAP templates + chiyuv_yashir live files: emoji `📝🔍📄✅📦` replaced with real SVG icons from `Design/Icons/` (info / search / reporting / ok / export), base64-inlined via `<img src="data:image/svg+xml;base64,...">`. Active stage classDef recolored from generic blue `#1f6feb` to brand yellow `#FEEC41` with black text. Visually verified via Playwright (toolbar mark, document brand header, 5 stage icons rendered, RTL Hebrew preserved).
     - `9d1562d` — **Viewer: intercept `.md` / `.markdown` / `.txt` link clicks.** `renderer.link` marks them with `data-md-link` and drops `target="_blank"`. Click delegate calls `openMarkdownLink(href)` which tries `showOpenFilePicker` (FSA, with `suggestedName`) if available, else triggers `#filePicker.click()`. Eliminates the `file://` 404 page customers were hitting when clicking sibling-file links in ROADMAP (e.g. `MISSING_INPUTS.md` link tried to open `file:///.../Protocols/viewer/MISSING_INPUTS.md`).
     - `1dde571` — **Bootstrap-for-fresh-session initiation prompt.** This file (`INITIATION_PROMPT_FOR_BOOTSTRAP_NEW_SESSION.md`). Adapted from the XSODUS 4-agent template to B+CIDRA single-agent flow.
@@ -52,7 +60,7 @@ In this order:
 
 1. **This file** — top-to-bottom.
 2. **`C:\Users\iliya\.claude\projects\g--My-Drive-Maccabi-AI-------------------\memory\MEMORY.md`** — every entry. Standing directives + user/project memory.
-3. **`CLAUDE.md`** in the framework root — project-level instructions.
+3. **`CLAUDE.md`** in the framework root — project-level instructions. *(Note: the framework root currently has **no** `CLAUDE.md`; the project-level file lives in each per-project bootstrap output. If absent here, skip — don't burn a turn hunting for it.)*
 4. **`THE_PROCESS.md`** — strategic overview of the B+CIDRA pipeline (Mode 1 / 2 / 3).
 5. **`RUNBOOK.md`** — step-by-step execution guide.
 6. **The latest commits on `main`**: `git log --oneline -10`.
@@ -62,7 +70,7 @@ Verify the framework HEAD on disk matches origin/main with `git status` + `git l
 
 ---
 
-### 3. Standing directives (firing-level — current as of 2026-06-02)
+### 3. Standing directives (firing-level — current as of 2026-06-03)
 
 These rules apply to every agent action. Violating them is a session-level breach.
 
@@ -126,6 +134,11 @@ These rules apply to every agent action. Violating them is a session-level breac
 **Long branches carry a RESUME doc**:
 - Any branch that may outlive a session writes `<scope>_RESUME.md` (or `REFACTOR_RESUME.md`) at the branch root so the next session picks up cleanly. Module list, wave order, safety-net commands, known sharp edges.
 
+**Workspace discipline (framework-rooted only)**:
+- Do framework development from a session whose cwd **is** the framework root (`C:\My_AI\enterprise_cidra_framework`). Never edit framework files from a *consumer* project's cwd (a bootstrapped applicative project that carries a vendored `.cidra/` copy).
+- Why: relative-path file tools resolve against cwd. A stray relative edit from a consumer project lands in that project's vendored `.cidra/` copy, which `bootstrap.ps1 -ForceFramework` silently overwrites — the edit evaporates and the canonical source was never touched. `git -C <framework>` operations are cwd-safe; **file edits are not.**
+- Also avoid running active dev from sync-drive paths (OneDrive / Google Drive / Dropbox). `bootstrap.ps1` refuses them by design (lock contention, partial writes, PowerShell 5.1 Hebrew/Unicode mojibake). Absolute-path reads/writes to local `C:\` framework files are safe; the hazard is the **cwd** sitting on the sync drive.
+
 ---
 
 ### 4. Verification discipline (proven across the viewer-upgrade rollout — REUSE)
@@ -161,6 +174,8 @@ After absorbing this file + the mandatory reads (Section 2):
     git branch -a
     ```
     Confirm `main` tip matches Section 1 "Current state". If mismatched, **stop and ask Iliya** — something landed since the state was written.
+    - **Housekeeping-commit exception:** if HEAD is a bootstrap/housekeeping commit (e.g. *"Bootstrap: refresh Current state block…"*) sitting on top of the recorded **feature** tip, that is **expected — not** "something landed." Match against the state block's recorded HEAD + feature-tip pair, and read `git log --oneline -3` to confirm the top commit is housekeeping.
+    - **Push-pending exception:** if HEAD is ahead of `origin/main` by exactly that housekeeping commit, it is the known push-pending state (Section 7). Land it first, per Section 1's "Immediate first action."
 
 2. Print the absorbed-bootstrap acknowledgment to chat:
     > Bootstrap absorbed. Framework HEAD: `<sha>` on `main`. Active branches: `<list>`. Standing directives confirmed: framework UX north star, no AI-default graphics, shell callout, language separation, file-based source of truth, anti-hallucination, decide-don't-ask-obvious, workflow-under-ultracode. Open items: `<count>`. Ready for direction.
@@ -196,8 +211,9 @@ The current arrangement: **the agent runs git mutations** (add, commit, push) �
 - `git status --short` before every commit. FLAG stray untracked files in untracked locations; commit only the intended paths.
 - `git add <path1> <path2>` — never `git add -A` or `git add .`.
 - Commit messages: subject + 2-line gap + body. HEREDOC pattern via `cat <<'EOF'` for multi-paragraph bodies (PowerShell-safe).
-- Co-author trailer mandatory: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
-- Push immediately after commit unless the user said otherwise.
+- Co-author trailer mandatory: `Co-Authored-By: Claude <model> <noreply@anthropic.com>` — use the **session's actual model** (e.g. `Claude Opus 4.8 (1M context)`), per the harness commit-trailer convention. Don't hardcode a stale version.
+- Push immediately after commit unless the user said otherwise — **subject to the harness push policy below.**
+- ⚠️ **Harness push policy (overrides "push immediately"):** the Claude Code auto-mode classifier **blocks direct pushes to the default branch** (`origin main`) unless the owner explicitly authorizes. So the agent **commits locally** (allowed), then surfaces the push for the owner to (a) run it themselves, (b) enable it via a `git push origin main` Bash permission rule (`/update-config`) so the agent can retry, or (c) defer. **Never loop-retry a blocked push** — explain and let the owner decide.
 - Branches: `main` is shippable; long-lived branches carry RESUME docs (see Section 3).
 
 ---
@@ -210,4 +226,4 @@ Do NOT continue feature work during a closeout / bootstrap-preparation pass. Foc
 
 *Drafted from the XSODUS 4-agent initiation template (2026-05-29 revision).*
 *Adapted for B+CIDRA single-agent flow against `C:\My_AI\enterprise_cidra_framework`.*
-*Last edited: 2026-06-03.*
+*Last edited: 2026-06-03 (refresh #2 — framework-rooted pivot, working-tree handoff, push-policy + workspace-discipline directives).*
